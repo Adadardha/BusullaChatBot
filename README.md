@@ -39,3 +39,15 @@ npm run build
 npm run preview
 ```
 
+
+## Deploy në GitHub Pages
+
+1. Hape repo në GitHub → **Settings → Pages** dhe zgjidh **Build and deployment: GitHub Actions**.
+2. Shto secrets te repo (Settings → Secrets and variables → Actions):
+   - `VITE_HF_API_KEY` (e detyrueshme)
+   - `VITE_HF_MODEL` (opsionale)
+3. Bëj push në branch `main`. Workflow `Deploy to GitHub Pages` do të ndërtojë dhe publikojë automatikisht `dist/`.
+4. Nëse repo ka emër tjetër nga `BusullaChatBot`, vendos `VITE_BASE_PATH` (p.sh. `/emri-repos/`) si variable në Actions ose në `.env.production`.
+
+Pas deploy, ndryshimet e fundit duhet të duken te linku i Pages (jo linku i AI Studio).
+
