@@ -1,4 +1,4 @@
-@ -34,127 +34,127 @@ export const TRANSLATIONS = {
+@@ -34,127 +34,127 @@ export const TRANSLATIONS = {
      title: "Rezultatet e Karrierës",
      match: "Përputhja Kryesore",
      alternatives: "Alternativa të Tjera",
@@ -138,6 +138,4 @@
 +    category: "Interesat"
    }
  ];
- 
-EOF
-)
+
