@@ -207,6 +207,3 @@
 +    return text || 'Më vjen keq, provo ta riformulosh pyetjen me më shumë detaje.';
 +  });
 +};
- 
-EOF
-)
