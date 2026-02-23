@@ -1,9 +1,4 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/README.md b/README.md
-index cb8c58ee363c5efb2c59cb1ce8b28d183d8b17a8..d8c38e568a3585df53e4fd2c8b19035dde6fc73d 100644
---- a/README.md
-+++ b/README.md
-@@ -1,20 +1,41 @@
+
  <div align="center">
  <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
  </div>
