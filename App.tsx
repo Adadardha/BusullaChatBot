@@ -1,3 +1,9 @@
+diff --git a/App.tsx b/App.tsx
+index 5ce01879f401e87b082c80188590fb2f6151adbe..6d25879c072f48ef9483bb6822a0624710110323 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -1,475 +1,489 @@
+ 
  import React, { useState, useEffect, useRef } from 'react';
  import { AppState, QuizAnswer, PredictionResult } from './types';
  import { TRANSLATIONS, QUIZ_QUESTIONS } from './i18n';
@@ -550,6 +556,3 @@
  };
  
  export default App;
- 
-EOF
-)
