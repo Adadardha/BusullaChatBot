@@ -1,4 +1,5 @@
 import { QuizAnswer, PredictionResult } from '../types';
+import { classifyToPrediction } from './classifier';
 
 type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 
@@ -47,32 +48,9 @@ function safeParse<T>(text: string, fallback: T): T {
   }
 }
 
-function normalizePrediction(raw: any): PredictionResult {
-  const fallbackAlternatives = [
-    { career: 'Menaxher Projekti', confidence: 0.65, description: 'Koordinimi dhe menaxhimi i projekteve.' },
-    { career: 'Analist të Dhënash', confidence: 0.60, description: 'Analiza dhe interpretimi i të dhënave.' },
-  ];
-
-  return {
-    primaryCareer: raw?.primaryCareer || raw?.primary?.title || 'Zhvillues Software',
-    confidence: typeof raw?.confidence === 'number' ? raw.confidence : (raw?.primary?.percentage ? raw.primary.percentage / 100 : 0.75),
-    description: raw?.description || raw?.primary?.description || 'Përputhje e mirë bazuar në profilin tuaj.',
-    alternatives: Array.isArray(raw?.alternatives) && raw.alternatives.length > 0
-      ? raw.alternatives.slice(0, 2).map((a: any) => ({
-          career: a.career || a.title || 'Alternativë',
-          confidence: typeof a.confidence === 'number' ? a.confidence : (a.percentage ? a.percentage / 100 : 0.6),
-          description: a.description || 'Alternativë karriere.',
-        }))
-      : fallbackAlternatives,
-    learningPath: Array.isArray(raw?.learningPath)
-      ? raw.learningPath
-      : (Array.isArray(raw?.primary?.learningPath?.courses) ? raw.primary.learningPath.courses : ['Filloni me kurse bazë', 'Praktikë projekti', 'Ndërtoni portfolio']),
-  };
-}
-
 async function callModel(messages: ChatMessage[], temperature = 0.4): Promise<string> {
   if (!HF_API_KEY) {
-    throw new Error('Mungon VITE_HF_API_KEY. Shtoje në .env.local që të përdorësh chatbot-in.');
+    throw new Error('Mungon VITE_HF_API_KEY.');
   }
 
   const response = await fetch(HF_URL, {
@@ -98,32 +76,39 @@ async function callModel(messages: ChatMessage[], temperature = 0.4): Promise<st
   return data?.choices?.[0]?.message?.content?.trim() || '';
 }
 
-export const predictCareer = async (answers: QuizAnswer[]): Promise<PredictionResult> => {
-  const prompt = `Analizo përgjigjet e mëposhtme për orientim karriere dhe kthe vetëm JSON valid me këtë format:
-{
-  "primaryCareer": "emri i karrierës kryesore",
-  "confidence": 0.85,
-  "description": "përshkrimi i karrierës",
-  "alternatives": [
-    { "career": "karriera alternative 1", "confidence": 0.70, "description": "përshkrimi" },
-    { "career": "karriera alternative 2", "confidence": 0.65, "description": "përshkrimi" }
-  ],
-  "learningPath": ["hapi 1", "hapi 2", "hapi 3"]
-}
-Përgjigju vetëm në shqip dhe mos shto tekst jashtë JSON.
-Përgjigjet e përdoruesit: ${JSON.stringify(answers)}`;
+/**
+ * Attempts to enrich the local classifier result with a natural-language
+ * description from the LLM. Falls back silently to the local result.
+ */
+async function enrichWithLLM(base: PredictionResult, answers: QuizAnswer[]): Promise<PredictionResult> {
+  const prompt = `Bazuar në këto përgjigje quiz karriere, shkruaj një paragraf të shkurtër (2-3 fjali) në shqip që shpjegon pse "${base.primaryCareer}" është karriera kryesore e rekomanduar. Mos shto tekst tjetër, vetëm paragrafi.
+Përgjigjet: ${JSON.stringify(answers.map(a => a.answer))}`;
 
-  return withRetry(async () => {
+  try {
     const text = await callModel([
       {
         role: 'system',
-        content: 'Ti je këshilltar karriere për tregun shqiptar. Jep përgjigje profesionale dhe konkrete.',
+        content: 'Ti je këshilltar karriere për tregun shqiptar. Jep përgjigje të shkurtra dhe profesionale.',
       },
       { role: 'user', content: prompt },
     ]);
+    if (text && text.length > 20) {
+      return { ...base, description: text };
+    }
+  } catch {
+    // silently fall through to local result
+  }
+  return base;
+}
 
-    return normalizePrediction(safeParse<any>(text, {}));
-  });
+export const predictCareer = async (answers: QuizAnswer[]): Promise<PredictionResult> => {
+  const localResult = classifyToPrediction(answers);
+
+  if (!HF_API_KEY) {
+    return localResult;
+  }
+
+  return withRetry(() => enrichWithLLM(localResult, answers));
 };
 
 export const generateInterviewQuestion = async (career: string, history: any[], level: Difficulty): Promise<string> => {

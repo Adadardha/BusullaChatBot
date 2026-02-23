@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { AppState, QuizAnswer, PredictionResult } from './types';
 import { TRANSLATIONS, QUIZ_QUESTIONS, INTERVIEW_QUESTIONS } from './i18n';
 import { predictCareer, getAssistantResponse, evaluateFinalInterview } from './services/gemini';
+import { classifyCareer } from './services/classifier';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ASCIIHeader, ASCIIGrid, ASCIILoader } from './Decorations';
 import Compass from './components/3D/Compass';
@@ -13,6 +14,7 @@ const App: React.FC = () => {
   const [customValue, setCustomValue] = useState('');
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [mlScores, setMlScores] = useState<Array<{ career: string; confidence: number }>>([]);
 
   const [interviewMessages, setInterviewMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [userInput, setUserInput] = useState('');
@@ -44,13 +46,14 @@ const App: React.FC = () => {
     setCurrentStep(AppState.ANALYZING);
     setIsLoading(true);
     try {
+      const scores = classifyCareer(finalAnswers);
+      setMlScores(scores.map(s => ({ career: s.career, confidence: s.confidence })));
       const result = await predictCareer(finalAnswers);
       setPrediction(result);
       setCurrentStep(AppState.RESULTS);
     } catch (error) {
       console.error(error);
-      alert('Ndodhi një gabim. Ju lutem provoni përsëri.');
-      resetToStart();
+      setCurrentStep(AppState.RESULTS);
     } finally {
       setIsLoading(false);
     }
@@ -351,6 +354,31 @@ const App: React.FC = () => {
                             <span className="text-xs md:text-sm font-mono opacity-70">{(alt.confidence * 100).toFixed(0)}%</span>
                           </div>
                           <p className="text-xs md:text-sm text-gray-400">{alt.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {mlScores.length > 0 && (
+                  <div className="mb-8 md:mb-12">
+                    <div className="flex items-center gap-3 mb-4 md:mb-6">
+                      <h4 className="text-lg md:text-xl font-bold uppercase tracking-wider">Analiza ML</h4>
+                      <span className="text-[10px] font-mono px-2 py-1 border border-white/20 uppercase tracking-widest opacity-60">model lokal</span>
+                    </div>
+                    <div className="space-y-2 md:space-y-3">
+                      {mlScores.slice(0, 6).map((s, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <span className="w-36 md:w-48 text-xs md:text-sm font-mono truncate opacity-80">{s.career}</span>
+                          <div className="flex-1 h-2 bg-white/10 overflow-hidden">
+                            <motion.div
+                              className={`h-full ${i === 0 ? 'bg-white' : 'bg-white/40'}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${s.confidence * 100}%` }}
+                              transition={{ duration: 0.6, delay: i * 0.07, ease: 'easeOut' }}
+                            />
+                          </div>
+                          <span className="w-10 text-right text-xs font-mono opacity-60">{(s.confidence * 100).toFixed(0)}%</span>
                         </div>
                       ))}
                     </div>
