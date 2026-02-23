@@ -1,4 +1,3 @@
-
 +import { QuizAnswer, PredictionResult } from "../types";
 +
 +type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
@@ -78,7 +77,7 @@
 +
 +async function callModel(messages: ChatMessage[], temperature = 0.4): Promise<string> {
 +  if (!HF_API_KEY) {
-+    throw new Error('Missing VITE_HF_API_KEY. Add it to .env.local to use the chatbot.');
++    throw new Error('Mungon VITE_HF_API_KEY. Shtoje në .env.local që të përdorësh chatbot-in.');
 +  }
 +
 +  const response = await fetch(HF_URL, {
