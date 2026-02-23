@@ -1,4 +1,4 @@
-import { QuizQuestion } from './types';
+import { QuizQuestion, InterviewMode, DifficultyLevel, QuickAction } from './types';
 
 export const TRANSLATIONS = {
   landing: {
@@ -13,6 +13,12 @@ export const TRANSLATIONS = {
     customPlaceholder: "Shkruani përgjigjen tuaj...",
     send: "DËRGONI",
     returnToStart: "KTHEHU NË FILLIM",
+    loading: "Duke ngarkuar...",
+    close: "Mbyll",
+    next: "Vazhdo",
+    skip: "Kapërce",
+    retry: "Provo përsëri",
+    export: "Eksporto",
   },
   quiz: {
     progress: "PYETJA",
@@ -31,12 +37,111 @@ export const TRANSLATIONS = {
     learning: "Rrugëtimi i Mësimit",
     practice: "Fillo Praktikën e Intervistës",
   },
-  interview: {
-    title: "Simulim Interviste",
-    subtitle: "Përgatituni për rolin tuaj të ri me pyetje reale dhe feedback të menjëhershëm.",
+  interviewSetup: {
+    title: "Konfiguro Intervistën",
+    subtitle: "Zgjidhni mënyrën dhe vështirësinë e intervistës suaj simulate",
+    selectMode: "Zgjidhni Mënyrën",
+    selectDifficulty: "Zgjidhni Vështirësinë",
+    startButton: "FILLO INTERVISTËN",
+    modes: {
+      technical: {
+        name: "Teknike",
+        description: "Pyetje të fokusuara në aftësi teknike dhe njohuri të fushës",
+      },
+      behavioral: {
+        name: "Sjelljeore",
+        description: "Pyetje rreth përvojave, situatave dhe menaxhimit interpersonal",
+      },
+      mixed: {
+        name: "Të Përzier",
+        description: "Kombinim i pyetjeve teknike dhe sjelljeore",
+      },
+      stress: {
+        name: "Stres Test",
+        description: "Pyetje sfiduese që testojnë reagimin nën presion",
+      },
+    },
+    difficulties: {
+      easy: {
+        name: "E Lehtë",
+        description: "Pyetje bazike për ngrohje",
+      },
+      medium: {
+        name: "Mesatare",
+        description: "Pyetje me intensitet mesatar",
+      },
+      hard: {
+        name: "E Vështirë",
+        description: "Pyetje komplekse që kërkojnë thellësi",
+      },
+    },
+    careerInfo: "Karriera juaj:",
+    questionsCount: "5-10 pyetje",
+    hints: "3 hints të disponueshme",
+  },
+  interviewSession: {
+    title: "Intervistë Simuluar",
+    subtitle: "Përgjigjuni pyetjeve dhe merrni feedback të menjëhershëm",
     timeRemaining: "Koha e mbetur",
     score: "Rezultati",
+    currentDifficulty: "Vështirësia",
+    questionsAnswered: "Pyetje të përgjigjura",
+    hintsRemaining: "Hints të mbetura",
     chatPlaceholder: "Shkruani përgjigjen tuaj...",
+    sendAnswer: "DËRGO PËRGJIGJEN",
+    getHint: "KËRKO HINT",
+    finishInterview: "PËRFUNDO INTERVISTËN",
+    typing: "Po shkruan...",
+    evaluating: "Duke vlerësuar...",
+    feedback: "Feedback",
+    strengths: "Pikat e forta",
+    improvements: "Përmirësime",
+  },
+  interviewReport: {
+    title: "Raporti i Intervistës",
+    overallScore: "Rezultati i Përgjithshëm",
+    verdict: "Vendimi",
+    verdicts: {
+      hired: "PRANUAR",
+      consider: "NË KONSIDERATË",
+      rejected: "NUK PRANUAR",
+    },
+    summary: "Përmbledhje",
+    categoryScores: "Rezultatet sipas Kategorive",
+    categories: {
+      technical: "Aftësi Teknike",
+      communication: "Komunikim",
+      problemSolving: "Zgjidhje Problemesh",
+      cultureFit: "Përshtatje Kulturore",
+    },
+    answersReview: "Rishikimi i Përgjigjeve",
+    recommendations: "Rekomandime",
+    weakTopics: "Tema për Përmirësim",
+    practiceSuggestions: "Sugjerime për Praktikë",
+    duration: "Kohëzgjatja",
+    minutes: "minuta",
+    newInterview: "INTERVISTË E RE",
+    backToResults: "KTHEHU TE REZULTATET",
+    exportReport: "EKSPORTO RAPORTIN",
+  },
+  chat: {
+    title: "Asistenti i Karrierës",
+    subtitle: "Këshilltar juaj 24/7",
+    placeholder: "Shkruani pyetjen tuaj...",
+    send: "Dërgo",
+    minimized: "Asistenti",
+    newChat: "Bisedë e re",
+    quickActions: "Veprime të shpejta",
+    welcome: "Përshëndetje! Unë jam asistenti juaj i karrierës 24/7. Si mund t'ju ndihmoj sot?",
+    error: "Ndodhi një gabim. Provo përsëri.",
+  },
+  quickActions: {
+    cvHelp: "Si ta përmirësoj CV-në?",
+    interviewTips: "Këshilla për intervistë",
+    careerChange: "Ndryshim karriere",
+    salary: "Si të negocioj pagën?",
+    skills: "Aftësi të nevojshme",
+    networking: "Networking tips",
   },
 };
 
@@ -109,7 +214,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   },
   {
     id: 7,
-    text: "Si do ta përshkruanit stilin tuaj të mësimit?",
+    text: "Si do ta përshkruait stilin tuaj të mësimit?",
     options: [
       "Mësoj duke lexuar dhe studiuar teori",
       "Mësoj duke vepruar (praktikisht)",
@@ -182,4 +287,78 @@ export const INTERVIEW_QUESTIONS: Record<string, string[]> = {
     "Çfarë përvojë keni me machine learning?",
     "Si siguroheni për cilësinë e të dhënave?",
   ],
+};
+
+export const QUICK_ACTIONS: QuickAction[] = [
+  {
+    id: 'cv',
+    label: 'CV Tips',
+    icon: '📄',
+    prompt: 'Si ta përmirësoj CV-në time për të marrë më shumë thirrje për intervistë?',
+  },
+  {
+    id: 'interview',
+    label: 'Intervistë',
+    icon: '💼',
+    prompt: 'Jepu disa këshilla për t\'u përgatitur për një intervistë pune.',
+  },
+  {
+    id: 'salary',
+    label: 'Paga',
+    icon: '💰',
+    prompt: 'Si të negocioj një pagë më të lartë gjatë intervistës?',
+  },
+  {
+    id: 'skills',
+    label: 'Aftësi',
+    icon: '🎯',
+    prompt: 'Çfarë aftësish janë më të kërkuara në tregun e punës sot?',
+  },
+];
+
+export const INTERVIEW_MODE_INFO = {
+  [InterviewMode.TECHNICAL]: {
+    name: TRANSLATIONS.interviewSetup.modes.technical.name,
+    description: TRANSLATIONS.interviewSetup.modes.technical.description,
+    icon: '⚙️',
+  },
+  [InterviewMode.BEHAVIORAL]: {
+    name: TRANSLATIONS.interviewSetup.modes.behavioral.name,
+    description: TRANSLATIONS.interviewSetup.modes.behavioral.description,
+    icon: '🤝',
+  },
+  [InterviewMode.MIXED]: {
+    name: TRANSLATIONS.interviewSetup.modes.mixed.name,
+    description: TRANSLATIONS.interviewSetup.modes.mixed.description,
+    icon: '🔀',
+  },
+  [InterviewMode.STRESS]: {
+    name: TRANSLATIONS.interviewSetup.modes.stress.name,
+    description: TRANSLATIONS.interviewSetup.modes.stress.description,
+    icon: '🔥',
+  },
+};
+
+export const DIFFICULTY_INFO = {
+  [DifficultyLevel.EASY]: {
+    name: TRANSLATIONS.interviewSetup.difficulties.easy.name,
+    description: TRANSLATIONS.interviewSetup.difficulties.easy.description,
+    color: 'text-green-400',
+    bgColor: 'bg-green-400/10',
+    borderColor: 'border-green-400/30',
+  },
+  [DifficultyLevel.MEDIUM]: {
+    name: TRANSLATIONS.interviewSetup.difficulties.medium.name,
+    description: TRANSLATIONS.interviewSetup.difficulties.medium.description,
+    color: 'text-yellow-400',
+    bgColor: 'bg-yellow-400/10',
+    borderColor: 'border-yellow-400/30',
+  },
+  [DifficultyLevel.HARD]: {
+    name: TRANSLATIONS.interviewSetup.difficulties.hard.name,
+    description: TRANSLATIONS.interviewSetup.difficulties.hard.description,
+    color: 'text-red-400',
+    bgColor: 'bg-red-400/10',
+    borderColor: 'border-red-400/30',
+  },
 };

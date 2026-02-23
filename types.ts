@@ -1,10 +1,11 @@
-
 export enum AppState {
   LANDING = 'LANDING',
   QUIZ = 'QUIZ',
   ANALYZING = 'ANALYZING',
   RESULTS = 'RESULTS',
-  INTERVIEW = 'INTERVIEW'
+  INTERVIEW_SETUP = 'INTERVIEW_SETUP',
+  INTERVIEW_SESSION = 'INTERVIEW_SESSION',
+  INTERVIEW_REPORT = 'INTERVIEW_REPORT',
 }
 
 export interface QuizAnswer {
@@ -32,4 +33,112 @@ export interface QuizQuestion {
   text: string;
   options: string[];
   category: string;
+}
+
+// Interview System Types
+export enum InterviewMode {
+  TECHNICAL = 'TECHNICAL',
+  BEHAVIORAL = 'BEHAVIORAL',
+  MIXED = 'MIXED',
+  STRESS = 'STRESS',
+}
+
+export enum DifficultyLevel {
+  EASY = 'EASY',
+  MEDIUM = 'MEDIUM',
+  HARD = 'HARD',
+}
+
+export interface InterviewFeedback {
+  score: number;
+  strengths: string[];
+  improvements: string[];
+  detailedFeedback: string;
+  technicalAccuracy?: number;
+  communication?: number;
+  problemSolving?: number;
+}
+
+export interface InterviewMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  metadata?: {
+    questionType?: 'technical' | 'behavioral' | 'followup';
+    difficulty?: DifficultyLevel;
+    feedback?: InterviewFeedback;
+    isHint?: boolean;
+    hintsRemaining?: number;
+  };
+}
+
+export interface InterviewSession {
+  id: string;
+  career: string;
+  mode: InterviewMode;
+  messages: InterviewMessage[];
+  currentDifficulty: DifficultyLevel;
+  overallScore: number;
+  weakAreas: string[];
+  strongAreas: string[];
+  startTime: number;
+  endTime?: number;
+  isComplete: boolean;
+  questionsAnswered: number;
+  hintsUsed: number;
+  maxHints: number;
+}
+
+export interface InterviewReport {
+  sessionId: string;
+  career: string;
+  mode: InterviewMode;
+  overallScore: number;
+  verdict: 'hired' | 'consider' | 'rejected';
+  summary: string;
+  categoryScores: {
+    technical: number;
+    communication: number;
+    problemSolving: number;
+    cultureFit: number;
+  };
+  answersReview: {
+    question: string;
+    answer: string;
+    score: number;
+    feedback: string;
+  }[];
+  recommendations: string[];
+  weakTopics: string[];
+  practiceSuggestions: string[];
+  duration: number;
+}
+
+// Career Assistant Chat Types
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  context?: {
+    careerPath?: string;
+    quizResults?: string;
+    currentTopic?: string;
+  };
+}
+
+export interface ChatSession {
+  messages: ChatMessage[];
+  context: {
+    careerPath?: string;
+    lastTopic?: string;
+    userPreferences: Record<string, any>;
+  };
+  lastUpdated: number;
+}
+
+export interface QuickAction {
+  id: string;
+  label: string;
+  icon: string;
+  prompt: string;
 }

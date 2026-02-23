@@ -1,11 +1,37 @@
-import React, { useState, useEffect, Suspense } from 'react';
-import { AppState, QuizAnswer, PredictionResult } from './types';
-import { TRANSLATIONS, QUIZ_QUESTIONS, INTERVIEW_QUESTIONS } from './i18n';
-import { predictCareer, getAssistantResponse, evaluateFinalInterview } from './services/gemini';
+import React, { useState, useEffect, Suspense, useCallback } from 'react';
+import {
+  AppState,
+  QuizAnswer,
+  PredictionResult,
+  InterviewMode,
+  DifficultyLevel,
+  InterviewSession,
+  InterviewReport as InterviewReportType,
+  ChatSession,
+} from './types';
+import {
+  TRANSLATIONS,
+  QUIZ_QUESTIONS,
+} from './i18n';
+import {
+  predictCareer,
+  generateDynamicQuestion,
+  evaluateAnswerWithFeedback,
+  determineNextDifficulty,
+  generateInterviewReport,
+  getHint,
+} from './services/gemini';
 import { classifyCareer } from './services/classifier';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ASCIIHeader, ASCIIGrid, ASCIILoader } from './Decorations';
+import { ASCIIHeader, ASCIIGrid } from './Decorations';
 import Compass from './components/3D/Compass';
+import InterviewSetup from './components/interview/InterviewSetup';
+import InterviewSessionComponent from './components/interview/InterviewSession';
+import InterviewReport from './components/interview/InterviewReport';
+import CareerAssistant from './components/chat/CareerAssistant';
+
+const CHAT_SESSION_KEY = 'busulla-chat-session';
+const MAX_QUESTIONS = 7;
 
 const App: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<AppState>(AppState.LANDING);
@@ -16,12 +42,42 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [mlScores, setMlScores] = useState<Array<{ career: string; confidence: number }>>([]);
 
-  const [interviewMessages, setInterviewMessages] = useState<Array<{ role: string; content: string }>>([]);
-  const [userInput, setUserInput] = useState('');
-  const [currentInterviewQuestion, setCurrentInterviewQuestion] = useState(0);
-  const [timeRemaining, setTimeRemaining] = useState(600);
-  const [timerStarted, setTimerStarted] = useState(false);
-  const [interviewScore, setInterviewScore] = useState(0);
+  // Interview Setup State
+  const [interviewMode, setInterviewMode] = useState<InterviewMode>(InterviewMode.MIXED);
+  const [interviewDifficulty, setInterviewDifficulty] = useState<DifficultyLevel>(DifficultyLevel.MEDIUM);
+
+  // Interview Session State
+  const [interviewSession, setInterviewSession] = useState<InterviewSession | null>(null);
+  const [interviewInput, setInterviewInput] = useState('');
+  const [isGeneratingQuestion, setIsGeneratingQuestion] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [interviewReport, setInterviewReport] = useState<InterviewReportType | null>(null);
+
+  // Chat State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatSession, setChatSession] = useState<ChatSession>(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_SESSION_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.messages && Array.isArray(parsed.messages)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return { messages: [], context: { userPreferences: {} }, lastUpdated: Date.now() };
+  });
+
+  // Persist chat session
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_SESSION_KEY, JSON.stringify(chatSession));
+    } catch {
+      // ignore
+    }
+  }, [chatSession]);
 
   const startQuiz = () => setCurrentStep(AppState.QUIZ);
 
@@ -36,7 +92,7 @@ const App: React.FC = () => {
     setCustomValue('');
 
     if (currentQuestionIndex < QUIZ_QUESTIONS.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
+      setCurrentQuestionIndex((prev) => prev + 1);
     } else {
       processResults(newAnswers);
     }
@@ -47,7 +103,7 @@ const App: React.FC = () => {
     setIsLoading(true);
     try {
       const scores = classifyCareer(finalAnswers);
-      setMlScores(scores.map(s => ({ career: s.career, confidence: s.confidence })));
+      setMlScores(scores.map((s) => ({ career: s.career, confidence: s.confidence })));
       const result = await predictCareer(finalAnswers);
       setPrediction(result);
       setCurrentStep(AppState.RESULTS);
@@ -59,78 +115,232 @@ const App: React.FC = () => {
     }
   };
 
-  const startInterview = () => {
+  const startInterviewSetup = () => {
+    if (!prediction) return;
+    setCurrentStep(AppState.INTERVIEW_SETUP);
+  };
+
+  const startInterview = useCallback(async () => {
     if (!prediction) return;
 
-    setCurrentStep(AppState.INTERVIEW);
-    setInterviewMessages([]);
-    setCurrentInterviewQuestion(0);
-    setTimeRemaining(600);
-    setTimerStarted(false);
-    setInterviewScore(0);
-    setUserInput('');
+    const sessionId = `interview-${Date.now()}`;
+    const newSession: InterviewSession = {
+      id: sessionId,
+      career: prediction.primaryCareer,
+      mode: interviewMode,
+      messages: [],
+      currentDifficulty: interviewDifficulty,
+      overallScore: 0,
+      weakAreas: [],
+      strongAreas: [],
+      startTime: Date.now(),
+      isComplete: false,
+      questionsAnswered: 0,
+      hintsUsed: 0,
+      maxHints: 3,
+    };
 
-    const careerQuestions = INTERVIEW_QUESTIONS[prediction.primaryCareer] || INTERVIEW_QUESTIONS['Zhvillues Software'];
-    const firstQuestion = careerQuestions[0];
+    setInterviewSession(newSession);
+    setCurrentStep(AppState.INTERVIEW_SESSION);
+    setInterviewInput('');
+    setInterviewReport(null);
 
-    setInterviewMessages([{ role: 'assistant', content: firstQuestion }]);
-  };
+    // Generate first question
+    setIsGeneratingQuestion(true);
+    try {
+      const result = await generateDynamicQuestion(
+        prediction.primaryCareer,
+        interviewMode,
+        interviewDifficulty,
+        [],
+      );
+      const questionMessage = {
+        role: 'assistant' as const,
+        content: result.question,
+        timestamp: Date.now(),
+        metadata: {
+          questionType: result.type as 'technical' | 'behavioral',
+          difficulty: interviewDifficulty,
+        },
+      };
+      setInterviewSession((prev) =>
+        prev ? { ...prev, messages: [...prev.messages, questionMessage] } : prev,
+      );
+    } catch (error) {
+      console.error('Error generating first question:', error);
+      const fallbackQuestion = {
+        role: 'assistant' as const,
+        content: 'Na trego për veten tënde dhe pse dëshiron këtë pozicion.',
+        timestamp: Date.now(),
+      };
+      setInterviewSession((prev) =>
+        prev ? { ...prev, messages: [...prev.messages, fallbackQuestion] } : prev,
+      );
+    } finally {
+      setIsGeneratingQuestion(false);
+    }
+  }, [prediction, interviewMode, interviewDifficulty]);
 
-  useEffect(() => {
-    if (currentStep === AppState.INTERVIEW && timerStarted && timeRemaining > 0) {
-      const timer = setInterval(() => {
-        setTimeRemaining(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            finishInterview();
-            return 0;
-          }
-          return prev - 1;
+  const submitInterviewAnswer = useCallback(async () => {
+    if (!interviewSession || !interviewInput.trim() || isEvaluating) return;
+
+    const userMessage = {
+      role: 'user' as const,
+      content: interviewInput,
+      timestamp: Date.now(),
+    };
+
+    const updatedMessages = [...interviewSession.messages, userMessage];
+    setInterviewSession((prev) =>
+      prev ? { ...prev, messages: updatedMessages } : prev,
+    );
+    setInterviewInput('');
+    setIsEvaluating(true);
+
+    try {
+      // Get the last question
+      const lastQuestion = [...interviewSession.messages]
+        .reverse()
+        .find((m) => m.role === 'assistant');
+      if (!lastQuestion) return;
+
+      // Evaluate the answer
+      const feedback = await evaluateAnswerWithFeedback(
+        interviewSession.career,
+        lastQuestion.content,
+        interviewInput,
+        interviewSession.mode,
+        interviewSession.currentDifficulty,
+      );
+
+      // Update message with feedback
+      const messageWithFeedback = {
+        ...userMessage,
+        metadata: { feedback },
+      };
+
+      const newQuestionsAnswered = interviewSession.questionsAnswered + 1;
+      const newScore =
+        (interviewSession.overallScore * interviewSession.questionsAnswered + feedback.score) /
+        newQuestionsAnswered;
+
+      const newWeakAreas = [...interviewSession.weakAreas];
+      const newStrongAreas = [...interviewSession.strongAreas];
+
+      if (feedback.score < 50) {
+        feedback.improvements.forEach((imp) => {
+          if (!newWeakAreas.includes(imp)) newWeakAreas.push(imp);
         });
-      }, 1000);
+      } else if (feedback.score >= 70) {
+        feedback.strengths.forEach((str) => {
+          if (!newStrongAreas.includes(str)) newStrongAreas.push(str);
+        });
+      }
 
-      return () => clearInterval(timer);
+      // Determine next difficulty
+      const nextDifficulty = await determineNextDifficulty(
+        [...updatedMessages, messageWithFeedback],
+        interviewSession.currentDifficulty,
+      );
+
+      setInterviewSession((prev) => {
+        if (!prev) return prev;
+        const msgs = prev.messages.map((m) =>
+          m.timestamp === userMessage.timestamp ? messageWithFeedback : m,
+        );
+        return {
+          ...prev,
+          messages: msgs,
+          questionsAnswered: newQuestionsAnswered,
+          overallScore: Math.round(newScore),
+          currentDifficulty: nextDifficulty,
+          weakAreas: newWeakAreas.slice(0, 5),
+          strongAreas: newStrongAreas.slice(0, 5),
+        };
+      });
+
+      // Generate next question or finish
+      if (newQuestionsAnswered < MAX_QUESTIONS) {
+        setIsGeneratingQuestion(true);
+        const nextQ = await generateDynamicQuestion(
+          interviewSession.career,
+          interviewSession.mode,
+          nextDifficulty,
+          [...updatedMessages, messageWithFeedback],
+          newWeakAreas,
+        );
+        const nextQuestionMessage = {
+          role: 'assistant' as const,
+          content: nextQ.question,
+          timestamp: Date.now(),
+          metadata: {
+            questionType: nextQ.type as 'technical' | 'behavioral',
+            difficulty: nextDifficulty,
+          },
+        };
+        setInterviewSession((prev) =>
+          prev ? { ...prev, messages: [...prev.messages, nextQuestionMessage] } : prev,
+        );
+        setIsGeneratingQuestion(false);
+      }
+    } catch (error) {
+      console.error('Error evaluating answer:', error);
+    } finally {
+      setIsEvaluating(false);
     }
-  }, [currentStep, timerStarted, timeRemaining]);
+  }, [interviewSession, interviewInput, isEvaluating]);
 
-  const handleInterviewInput = async () => {
-    if (!userInput.trim() || !prediction) return;
+  const requestHint = useCallback(async () => {
+    if (!interviewSession || interviewSession.hintsUsed >= interviewSession.maxHints) return;
 
-    if (!timerStarted) {
-      setTimerStarted(true);
+    const lastQuestion = [...interviewSession.messages]
+      .reverse()
+      .find((m) => m.role === 'assistant');
+    if (!lastQuestion) return;
+
+    try {
+      const hint = await getHint(lastQuestion.content, interviewSession.career);
+      const hintMessage = {
+        role: 'assistant' as const,
+        content: `💡 Hint: ${hint}`,
+        timestamp: Date.now(),
+        metadata: { isHint: true },
+      };
+      setInterviewSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: [...prev.messages, hintMessage],
+              hintsUsed: prev.hintsUsed + 1,
+            }
+          : prev,
+      );
+    } catch (error) {
+      console.error('Error getting hint:', error);
     }
+  }, [interviewSession]);
 
-    const newMessages = [...interviewMessages, { role: 'user', content: userInput }];
-    setInterviewMessages(newMessages);
-    setUserInput('');
+  const finishInterview = useCallback(async () => {
+    if (!interviewSession) return;
 
-    const careerQuestions = INTERVIEW_QUESTIONS[prediction.primaryCareer] || INTERVIEW_QUESTIONS['Zhvillues Software'];
+    setIsEvaluating(true);
+    try {
+      const completedSession: InterviewSession = {
+        ...interviewSession,
+        isComplete: true,
+        endTime: Date.now(),
+      };
+      setInterviewSession(completedSession);
 
-    if (currentInterviewQuestion < careerQuestions.length - 1) {
-      const nextQuestion = careerQuestions[currentInterviewQuestion + 1];
-      setInterviewMessages([...newMessages, { role: 'assistant', content: nextQuestion }]);
-      setCurrentInterviewQuestion(prev => prev + 1);
-      setInterviewScore(prev => prev + 10);
-    } else {
-      finishInterview();
+      const report = await generateInterviewReport(completedSession);
+      setInterviewReport(report);
+      setCurrentStep(AppState.INTERVIEW_REPORT);
+    } catch (error) {
+      console.error('Error generating report:', error);
+    } finally {
+      setIsEvaluating(false);
     }
-  };
-
-  const finishInterview = () => {
-    setTimerStarted(false);
-    const finalScore = Math.min(100, interviewScore + 10);
-    setInterviewScore(finalScore);
-
-    setInterviewMessages(prev => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `Intervista përfundoi! Rezultati juaj: ${finalScore}/100. ${
-          finalScore >= 70 ? 'Shumë mirë!' : finalScore >= 50 ? 'Performancë e mirë!' : 'Vazhdoni të praktikoni!'
-        }`,
-      },
-    ]);
-  };
+  }, [interviewSession]);
 
   const resetToStart = () => {
     setCurrentStep(AppState.LANDING);
@@ -139,12 +349,11 @@ const App: React.FC = () => {
     setCustomValue('');
     setPrediction(null);
     setIsLoading(false);
-    setInterviewMessages([]);
-    setUserInput('');
-    setCurrentInterviewQuestion(0);
-    setTimeRemaining(600);
-    setTimerStarted(false);
-    setInterviewScore(0);
+    setInterviewSession(null);
+    setInterviewInput('');
+    setInterviewReport(null);
+    setInterviewMode(InterviewMode.MIXED);
+    setInterviewDifficulty(DifficultyLevel.MEDIUM);
   };
 
   const formatTime = (seconds: number) => {
@@ -191,8 +400,12 @@ const App: React.FC = () => {
             <span className="text-[10px] md:text-[12px] -rotate-45">B</span>
           </div>
           <div className="flex flex-col">
-            <span className="font-heading font-bold text-base md:text-lg tracking-tighter uppercase leading-none">Busulla</span>
-            <span className="text-[8px] md:text-[10px] font-mono opacity-50 uppercase tracking-[0.3em]">EDICION_PRO</span>
+            <span className="font-heading font-bold text-base md:text-lg tracking-tighter uppercase leading-none">
+              Busulla
+            </span>
+            <span className="text-[8px] md:text-[10px] font-mono opacity-50 uppercase tracking-[0.3em]">
+              EDICION_PRO
+            </span>
           </div>
         </div>
         <button
@@ -203,7 +416,7 @@ const App: React.FC = () => {
         </button>
       </nav>
 
-      <main className="relative flex flex-col items-center justify-center min-h-screen px-4 md:px-6 lg:px-8 pt-20 md:pt-24">
+      <main className="relative flex flex-col items-center justify-center min-h-screen px-4 md:px-6 lg:px-8 pt-20 md:pt-24 pb-20">
         <AnimatePresence mode="wait">
           {currentStep === AppState.LANDING && (
             <motion.div
@@ -245,7 +458,9 @@ const App: React.FC = () => {
               <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
                 <div className="mb-6 md:mb-8">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs md:text-sm uppercase font-mono">{TRANSLATIONS.quiz.progress}</span>
+                    <span className="text-xs md:text-sm uppercase font-mono">
+                      {TRANSLATIONS.quiz.progress}
+                    </span>
                     <span className="text-xs md:text-sm font-bold">
                       {currentQuestionIndex + 1}/{QUIZ_QUESTIONS.length}
                     </span>
@@ -254,7 +469,9 @@ const App: React.FC = () => {
                     <motion.div
                       className="h-full bg-white"
                       initial={{ width: 0 }}
-                      animate={{ width: `${((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100}%` }}
+                      animate={{
+                        width: `${((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100}%`,
+                      }}
                       transition={{ duration: 0.3 }}
                     />
                   </div>
@@ -271,7 +488,9 @@ const App: React.FC = () => {
                       onClick={() => handleAnswer(option)}
                       className="w-full text-left p-4 md:p-6 brutalist-border hover:bg-white hover:text-black transition-all text-sm md:text-base"
                     >
-                      <span className="font-mono text-xs mr-3 md:mr-4 opacity-50">[{String.fromCharCode(65 + i)}]</span>
+                      <span className="font-mono text-xs mr-3 md:mr-4 opacity-50">
+                        [{String.fromCharCode(65 + i)}]
+                      </span>
                       {option}
                     </button>
                   ))}
@@ -280,7 +499,7 @@ const App: React.FC = () => {
                     <input
                       type="text"
                       value={customValue}
-                      onChange={e => setCustomValue(e.target.value)}
+                      onChange={(e) => setCustomValue(e.target.value)}
                       placeholder={TRANSLATIONS.common.customPlaceholder}
                       className="w-full bg-transparent border-2 border-white/20 p-4 md:p-6 mb-3 md:mb-4 focus:border-white outline-none text-sm md:text-base"
                     />
@@ -296,7 +515,7 @@ const App: React.FC = () => {
 
                 {currentQuestionIndex > 0 && (
                   <button
-                    onClick={() => setCurrentQuestionIndex(prev => prev - 1)}
+                    onClick={() => setCurrentQuestionIndex((prev) => prev - 1)}
                     className="mt-6 md:mt-8 text-xs md:text-sm uppercase tracking-wider opacity-50 hover:opacity-100"
                   >
                     ← {TRANSLATIONS.common.back}
@@ -314,8 +533,12 @@ const App: React.FC = () => {
               className="text-center space-y-6 md:space-y-8 max-w-2xl w-full relative z-10"
             >
               <div className="h-32 md:h-40" />
-              <h2 className="text-3xl md:text-5xl font-heading font-bold">{TRANSLATIONS.analyzing.title}</h2>
-              <p className="text-lg md:text-xl text-gray-400 italic">{TRANSLATIONS.analyzing.subtitle}</p>
+              <h2 className="text-3xl md:text-5xl font-heading font-bold">
+                {TRANSLATIONS.analyzing.title}
+              </h2>
+              <p className="text-lg md:text-xl text-gray-400 italic">
+                {TRANSLATIONS.analyzing.subtitle}
+              </p>
             </motion.div>
           )}
 
@@ -327,31 +550,47 @@ const App: React.FC = () => {
               className="w-full max-w-2xl md:max-w-4xl space-y-6 md:space-y-8"
             >
               <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
-                <h2 className="text-2xl md:text-4xl font-heading font-bold mb-6 md:mb-8">{TRANSLATIONS.results.title}</h2>
+                <h2 className="text-2xl md:text-4xl font-heading font-bold mb-6 md:mb-8">
+                  {TRANSLATIONS.results.title}
+                </h2>
 
                 <div className="mb-8 md:mb-12 p-6 md:p-8 brutalist-border bg-white/5">
                   <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-4 md:mb-6 gap-4">
                     <div>
-                      <p className="text-xs md:text-sm uppercase tracking-wider opacity-50 mb-2">{TRANSLATIONS.results.match}</p>
-                      <h3 className="text-3xl md:text-5xl font-heading font-black">{prediction.primaryCareer}</h3>
+                      <p className="text-xs md:text-sm uppercase tracking-wider opacity-50 mb-2">
+                        {TRANSLATIONS.results.match}
+                      </p>
+                      <h3 className="text-3xl md:text-5xl font-heading font-black">
+                        {prediction.primaryCareer}
+                      </h3>
                     </div>
                     <div className="text-left md:text-right">
-                      <p className="text-xs md:text-sm uppercase tracking-wider opacity-50 mb-2">{TRANSLATIONS.results.confidence}</p>
-                      <p className="text-3xl md:text-5xl font-mono font-bold">{(prediction.confidence * 100).toFixed(0)}%</p>
+                      <p className="text-xs md:text-sm uppercase tracking-wider opacity-50 mb-2">
+                        {TRANSLATIONS.results.confidence}
+                      </p>
+                      <p className="text-3xl md:text-5xl font-mono font-bold">
+                        {(prediction.confidence * 100).toFixed(0)}%
+                      </p>
                     </div>
                   </div>
-                  <p className="text-base md:text-lg text-gray-300 leading-relaxed">{prediction.description}</p>
+                  <p className="text-base md:text-lg text-gray-300 leading-relaxed">
+                    {prediction.description}
+                  </p>
                 </div>
 
                 {prediction.alternatives && prediction.alternatives.length > 0 && (
                   <div className="mb-8 md:mb-12">
-                    <h4 className="text-lg md:text-xl font-bold mb-4 md:mb-6 uppercase tracking-wider">{TRANSLATIONS.results.alternatives}</h4>
+                    <h4 className="text-lg md:text-xl font-bold mb-4 md:mb-6 uppercase tracking-wider">
+                      {TRANSLATIONS.results.alternatives}
+                    </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                       {prediction.alternatives.map((alt, i) => (
                         <div key={i} className="p-4 md:p-6 brutalist-border bg-white/5">
                           <div className="flex justify-between items-start mb-2">
                             <h5 className="font-bold text-base md:text-lg">{alt.career}</h5>
-                            <span className="text-xs md:text-sm font-mono opacity-70">{(alt.confidence * 100).toFixed(0)}%</span>
+                            <span className="text-xs md:text-sm font-mono opacity-70">
+                              {(alt.confidence * 100).toFixed(0)}%
+                            </span>
                           </div>
                           <p className="text-xs md:text-sm text-gray-400">{alt.description}</p>
                         </div>
@@ -363,13 +602,19 @@ const App: React.FC = () => {
                 {mlScores.length > 0 && (
                   <div className="mb-8 md:mb-12">
                     <div className="flex items-center gap-3 mb-4 md:mb-6">
-                      <h4 className="text-lg md:text-xl font-bold uppercase tracking-wider">Analiza ML</h4>
-                      <span className="text-[10px] font-mono px-2 py-1 border border-white/20 uppercase tracking-widest opacity-60">model lokal</span>
+                      <h4 className="text-lg md:text-xl font-bold uppercase tracking-wider">
+                        Analiza ML
+                      </h4>
+                      <span className="text-[10px] font-mono px-2 py-1 border border-white/20 uppercase tracking-widest opacity-60">
+                        model lokal
+                      </span>
                     </div>
                     <div className="space-y-2 md:space-y-3">
                       {mlScores.slice(0, 6).map((s, i) => (
                         <div key={i} className="flex items-center gap-3">
-                          <span className="w-36 md:w-48 text-xs md:text-sm font-mono truncate opacity-80">{s.career}</span>
+                          <span className="w-36 md:w-48 text-xs md:text-sm font-mono truncate opacity-80">
+                            {s.career}
+                          </span>
                           <div className="flex-1 h-2 bg-white/10 overflow-hidden">
                             <motion.div
                               className={`h-full ${i === 0 ? 'bg-white' : 'bg-white/40'}`}
@@ -378,7 +623,9 @@ const App: React.FC = () => {
                               transition={{ duration: 0.6, delay: i * 0.07, ease: 'easeOut' }}
                             />
                           </div>
-                          <span className="w-10 text-right text-xs font-mono opacity-60">{(s.confidence * 100).toFixed(0)}%</span>
+                          <span className="w-10 text-right text-xs font-mono opacity-60">
+                            {(s.confidence * 100).toFixed(0)}%
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -387,11 +634,15 @@ const App: React.FC = () => {
 
                 {prediction.learningPath && (
                   <div className="mb-8 md:mb-12">
-                    <h4 className="text-lg md:text-xl font-bold mb-4 md:mb-6 uppercase tracking-wider">{TRANSLATIONS.results.learning}</h4>
+                    <h4 className="text-lg md:text-xl font-bold mb-4 md:mb-6 uppercase tracking-wider">
+                      {TRANSLATIONS.results.learning}
+                    </h4>
                     <ul className="space-y-3 md:space-y-4">
                       {prediction.learningPath.map((step, i) => (
                         <li key={i} className="flex items-start gap-3 md:gap-4">
-                          <span className="font-mono text-xs md:text-sm mt-1 opacity-50">{i + 1}.</span>
+                          <span className="font-mono text-xs md:text-sm mt-1 opacity-50">
+                            {i + 1}.
+                          </span>
                           <span className="text-sm md:text-base">{step}</span>
                         </li>
                       ))}
@@ -400,7 +651,7 @@ const App: React.FC = () => {
                 )}
 
                 <button
-                  onClick={startInterview}
+                  onClick={startInterviewSetup}
                   className="w-full p-6 md:p-8 bg-white text-black font-heading font-bold text-lg md:text-2xl uppercase brutalist-button hover:scale-[1.02] transition-all"
                 >
                   {TRANSLATIONS.results.practice} →
@@ -409,83 +660,49 @@ const App: React.FC = () => {
             </motion.div>
           )}
 
-          {currentStep === AppState.INTERVIEW && (
-            <motion.div
-              key="interview"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="w-full max-w-2xl md:max-w-4xl"
-            >
-              <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-8 gap-4">
-                  <div>
-                    <h2 className="text-2xl md:text-4xl font-heading font-bold">{TRANSLATIONS.interview.title}</h2>
-                    <p className="text-sm md:text-base text-gray-400 mt-2">{TRANSLATIONS.interview.subtitle}</p>
-                  </div>
-                  <div className="text-left md:text-right">
-                    <p className="text-xs uppercase tracking-wider opacity-50 mb-1">{TRANSLATIONS.interview.timeRemaining}</p>
-                    <p className={`text-2xl md:text-3xl font-mono font-bold ${timeRemaining < 60 ? 'text-red-500' : ''}`}>
-                      {formatTime(timeRemaining)}
-                    </p>
-                    {interviewScore > 0 && (
-                      <p className="text-xs md:text-sm mt-2">
-                        {TRANSLATIONS.interview.score}: {interviewScore}/100
-                      </p>
-                    )}
-                  </div>
-                </div>
+          {currentStep === AppState.INTERVIEW_SETUP && prediction && (
+            <InterviewSetup
+              prediction={prediction}
+              selectedMode={interviewMode}
+              selectedDifficulty={interviewDifficulty}
+              onModeChange={setInterviewMode}
+              onDifficultyChange={setInterviewDifficulty}
+              onStart={startInterview}
+            />
+          )}
 
-                <div className="mb-6 md:mb-8 max-h-[50vh] overflow-y-auto space-y-4 md:space-y-6 pr-2">
-                  {interviewMessages.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={`p-4 md:p-6 brutalist-border ${
-                        msg.role === 'user' ? 'bg-white/10 ml-0 md:ml-12' : 'bg-white/5 mr-0 md:mr-12'
-                      }`}
-                    >
-                      <p className="text-xs uppercase tracking-wider opacity-50 mb-2">
-                        {msg.role === 'user' ? 'Ju' : 'Intervistues'}
-                      </p>
-                      <p className="text-sm md:text-base leading-relaxed">{msg.content}</p>
-                    </div>
-                  ))}
-                </div>
+          {currentStep === AppState.INTERVIEW_SESSION && interviewSession && (
+            <InterviewSessionComponent
+              session={interviewSession}
+              userInput={interviewInput}
+              isGeneratingQuestion={isGeneratingQuestion}
+              isEvaluating={isEvaluating}
+              onInputChange={setInterviewInput}
+              onSubmitAnswer={submitInterviewAnswer}
+              onRequestHint={requestHint}
+              onFinish={finishInterview}
+            />
+          )}
 
-                <div className="space-y-4 md:space-y-6">
-                  <textarea
-                    value={userInput}
-                    onChange={e => setUserInput(e.target.value)}
-                    onKeyPress={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleInterviewInput();
-                      }
-                    }}
-                    placeholder={TRANSLATIONS.interview.chatPlaceholder}
-                    className="w-full bg-transparent border-2 border-white/20 p-4 md:p-6 min-h-[120px] md:min-h-[150px] focus:border-white outline-none resize-none text-sm md:text-base"
-                    disabled={timeRemaining === 0}
-                  />
-                  <div className="flex flex-col md:flex-row gap-3 md:gap-4">
-                    <button
-                      onClick={handleInterviewInput}
-                      disabled={!userInput.trim() || timeRemaining === 0}
-                      className="flex-1 brutalist-border p-4 md:p-6 hover:bg-white hover:text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed text-sm md:text-base font-bold uppercase"
-                    >
-                      {TRANSLATIONS.common.send}
-                    </button>
-                    <button
-                      onClick={resetToStart}
-                      className="brutalist-border p-4 md:p-6 hover:bg-red-500 hover:text-white transition-all text-sm md:text-base font-bold uppercase"
-                    >
-                      {TRANSLATIONS.common.returnToStart}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+          {currentStep === AppState.INTERVIEW_REPORT && interviewReport && (
+            <InterviewReport
+              report={interviewReport}
+              onNewInterview={startInterviewSetup}
+              onBackToResults={() => setCurrentStep(AppState.RESULTS)}
+            />
           )}
         </AnimatePresence>
       </main>
+
+      {/* Career Assistant Chat */}
+      <CareerAssistant
+        isOpen={isChatOpen}
+        onToggle={() => setIsChatOpen(!isChatOpen)}
+        session={chatSession}
+        onSessionUpdate={setChatSession}
+        careerContext={prediction?.primaryCareer}
+        weakAreas={interviewSession?.weakAreas}
+      />
 
       <style>{`
         .brutalist-border {
