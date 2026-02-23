@@ -40,6 +40,3 @@
 +npm run preview
 +```
 +
- 
-EOF
-)
