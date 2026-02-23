@@ -13,25 +13,18 @@ export interface QuizAnswer {
   isCustom: boolean;
 }
 
-export interface CareerMatch {
-  title: string;
-  percentage: number;
+export interface AlternativeCareer {
+  career: string;
+  confidence: number;
   description: string;
-  whyFit: string;
-  strengths: string[];
-  growthAreas: string[];
-  salaryRange: string;
-  education: string[];
-  learningPath: {
-    courses: string[];
-    resources: string[];
-    timeline: string;
-  };
 }
 
 export interface PredictionResult {
-  primary: CareerMatch;
-  alternatives: CareerMatch[];
+  primaryCareer: string;
+  confidence: number;
+  description: string;
+  alternatives: AlternativeCareer[];
+  learningPath: string[];
 }
 
 export interface QuizQuestion {

@@ -1,23 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { AppState, QuizAnswer, PredictionResult } from './types';
 import { TRANSLATIONS, QUIZ_QUESTIONS, INTERVIEW_QUESTIONS } from './i18n';
 import { predictCareer, getAssistantResponse, evaluateFinalInterview } from './services/gemini';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ASCIIHeader, ASCIIGrid, ASCIILoader } from './Decorations';
+import Compass from './components/3D/Compass';
 
 const App: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<AppState>(AppState.LANDING);
   const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [customValue, setCustomValue] = useState("");
+  const [customValue, setCustomValue] = useState('');
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Interview state
   const [interviewMessages, setInterviewMessages] = useState<Array<{ role: string; content: string }>>([]);
-  const [userInput, setUserInput] = useState("");
+  const [userInput, setUserInput] = useState('');
   const [currentInterviewQuestion, setCurrentInterviewQuestion] = useState(0);
-  const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes = 600 seconds
+  const [timeRemaining, setTimeRemaining] = useState(600);
   const [timerStarted, setTimerStarted] = useState(false);
   const [interviewScore, setInterviewScore] = useState(0);
 
@@ -28,10 +28,10 @@ const App: React.FC = () => {
     newAnswers[currentQuestionIndex] = {
       questionId: QUIZ_QUESTIONS[currentQuestionIndex].id,
       answer,
-      isCustom
+      isCustom,
     };
     setQuizAnswers(newAnswers);
-    setCustomValue("");
+    setCustomValue('');
 
     if (currentQuestionIndex < QUIZ_QUESTIONS.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
@@ -49,7 +49,7 @@ const App: React.FC = () => {
       setCurrentStep(AppState.RESULTS);
     } catch (error) {
       console.error(error);
-      alert("Ndodhi një gabim. Ju lutem provoni përsëri.");
+      alert('Ndodhi një gabim. Ju lutem provoni përsëri.');
       resetToStart();
     } finally {
       setIsLoading(false);
@@ -58,25 +58,21 @@ const App: React.FC = () => {
 
   const startInterview = () => {
     if (!prediction) return;
-    
+
     setCurrentStep(AppState.INTERVIEW);
     setInterviewMessages([]);
     setCurrentInterviewQuestion(0);
-    setTimeRemaining(600); // Reset to 10 minutes
+    setTimeRemaining(600);
     setTimerStarted(false);
     setInterviewScore(0);
-    setUserInput("");
+    setUserInput('');
 
-    // Load first question based on career
-    const careerQuestions = INTERVIEW_QUESTIONS[prediction.primaryCareer] || INTERVIEW_QUESTIONS["Zhvillues Software"];
+    const careerQuestions = INTERVIEW_QUESTIONS[prediction.primaryCareer] || INTERVIEW_QUESTIONS['Zhvillues Software'];
     const firstQuestion = careerQuestions[0];
-    
-    setInterviewMessages([
-      { role: "assistant", content: firstQuestion }
-    ]);
+
+    setInterviewMessages([{ role: 'assistant', content: firstQuestion }]);
   };
 
-  // Timer effect for interview
   useEffect(() => {
     if (currentStep === AppState.INTERVIEW && timerStarted && timeRemaining > 0) {
       const timer = setInterval(() => {
@@ -89,7 +85,7 @@ const App: React.FC = () => {
           return prev - 1;
         });
       }, 1000);
-      
+
       return () => clearInterval(timer);
     }
   }, [currentStep, timerStarted, timeRemaining]);
@@ -97,31 +93,22 @@ const App: React.FC = () => {
   const handleInterviewInput = async () => {
     if (!userInput.trim() || !prediction) return;
 
-    // Start timer on first input
     if (!timerStarted) {
       setTimerStarted(true);
     }
 
-    const newMessages = [
-      ...interviewMessages,
-      { role: "user", content: userInput }
-    ];
+    const newMessages = [...interviewMessages, { role: 'user', content: userInput }];
     setInterviewMessages(newMessages);
-    setUserInput("");
+    setUserInput('');
 
-    // Get AI response for current question
-    const careerQuestions = INTERVIEW_QUESTIONS[prediction.primaryCareer] || INTERVIEW_QUESTIONS["Zhvillues Software"];
-    
-    // Check if there are more questions
+    const careerQuestions = INTERVIEW_QUESTIONS[prediction.primaryCareer] || INTERVIEW_QUESTIONS['Zhvillues Software'];
+
     if (currentInterviewQuestion < careerQuestions.length - 1) {
       const nextQuestion = careerQuestions[currentInterviewQuestion + 1];
-      setInterviewMessages([...newMessages, { role: "assistant", content: nextQuestion }]);
+      setInterviewMessages([...newMessages, { role: 'assistant', content: nextQuestion }]);
       setCurrentInterviewQuestion(prev => prev + 1);
-      
-      // Calculate score (simple: 10 points per answer)
       setInterviewScore(prev => prev + 10);
     } else {
-      // Last question - finish interview
       finishInterview();
     }
   };
@@ -130,15 +117,15 @@ const App: React.FC = () => {
     setTimerStarted(false);
     const finalScore = Math.min(100, interviewScore + 10);
     setInterviewScore(finalScore);
-    
+
     setInterviewMessages(prev => [
       ...prev,
-      { 
-        role: "assistant", 
+      {
+        role: 'assistant',
         content: `Intervista përfundoi! Rezultati juaj: ${finalScore}/100. ${
-          finalScore >= 70 ? "Shumë mirë!" : finalScore >= 50 ? "Performancë e mirë!" : "Vazhdoni të praktikoni!"
-        }`
-      }
+          finalScore >= 70 ? 'Shumë mirë!' : finalScore >= 50 ? 'Performancë e mirë!' : 'Vazhdoni të praktikoni!'
+        }`,
+      },
     ]);
   };
 
@@ -146,11 +133,11 @@ const App: React.FC = () => {
     setCurrentStep(AppState.LANDING);
     setQuizAnswers([]);
     setCurrentQuestionIndex(0);
-    setCustomValue("");
+    setCustomValue('');
     setPrediction(null);
     setIsLoading(false);
     setInterviewMessages([]);
-    setUserInput("");
+    setUserInput('');
     setCurrentInterviewQuestion(0);
     setTimeRemaining(600);
     setTimerStarted(false);
@@ -166,7 +153,35 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen selection:bg-white selection:text-black overflow-x-hidden bg-[#050505]">
       <ASCIIGrid />
-      
+
+      {currentStep === AppState.LANDING && (
+        <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 0.18, scale: 1 }}
+            transition={{ duration: 1.5, ease: 'easeOut' }}
+          >
+            <Suspense fallback={null}>
+              <Compass isSpinning={false} rotationSpeed={0.6} size="lg" />
+            </Suspense>
+          </motion.div>
+        </div>
+      )}
+
+      {currentStep === AppState.ANALYZING && (
+        <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5, rotate: 0 }}
+            animate={{ opacity: 0.9, scale: 1, rotate: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+          >
+            <Suspense fallback={null}>
+              <Compass isSpinning={true} rotationSpeed={2.5} size="lg" />
+            </Suspense>
+          </motion.div>
+        </div>
+      )}
+
       <nav className="fixed top-0 left-0 w-full p-4 md:p-6 flex justify-between items-center z-50 backdrop-blur-sm bg-black/50 border-b border-white/5">
         <div className="flex items-center gap-3 md:gap-4">
           <div className="w-6 h-6 md:w-8 md:h-8 border-2 border-white rotate-45 flex items-center justify-center bg-white text-black font-bold">
@@ -177,37 +192,39 @@ const App: React.FC = () => {
             <span className="text-[8px] md:text-[10px] font-mono opacity-50 uppercase tracking-[0.3em]">EDICION_PRO</span>
           </div>
         </div>
-        <button 
-          onClick={resetToStart} 
+        <button
+          onClick={resetToStart}
           className="text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 px-3 py-2 md:px-4 hover:bg-white hover:text-black transition-all"
         >
-          {currentStep !== AppState.LANDING ? TRANSLATIONS.common.restart : "SQ-AL"}
+          {currentStep !== AppState.LANDING ? TRANSLATIONS.common.restart : 'SQ-AL'}
         </button>
       </nav>
 
       <main className="relative flex flex-col items-center justify-center min-h-screen px-4 md:px-6 lg:px-8 pt-20 md:pt-24">
         <AnimatePresence mode="wait">
           {currentStep === AppState.LANDING && (
-            <motion.div 
-              key="landing" 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              className="max-w-4xl w-full text-center space-y-8 md:space-y-12"
+            <motion.div
+              key="landing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="max-w-4xl w-full text-center space-y-8 md:space-y-12 relative z-10"
             >
               <ASCIIHeader />
               <div className="space-y-4 md:space-y-6">
                 <h1 className="text-4xl md:text-7xl lg:text-9xl font-heading font-black uppercase leading-[0.85] tracking-tighter">
                   {TRANSLATIONS.landing.title.split(' ').map((word, j) => (
-                    <span key={j} className="block hover:italic">{word}</span>
+                    <span key={j} className="block hover:italic">
+                      {word}
+                    </span>
                   ))}
                 </h1>
                 <p className="text-lg md:text-xl lg:text-2xl text-gray-400 max-w-xl mx-auto italic border-l-2 border-white/20 pl-4 md:pl-6">
                   {TRANSLATIONS.landing.subtitle}
                 </p>
               </div>
-              <button 
-                onClick={startQuiz} 
+              <button
+                onClick={startQuiz}
                 className="px-8 py-4 md:px-16 md:py-8 bg-white text-black font-heading font-black text-xl md:text-3xl uppercase brutalist-button transition-all hover:scale-105"
               >
                 {TRANSLATIONS.common.start} →
@@ -216,21 +233,23 @@ const App: React.FC = () => {
           )}
 
           {currentStep === AppState.QUIZ && (
-            <motion.div 
-              key="quiz" 
-              initial={{ x: 100, opacity: 0 }} 
-              animate={{ x: 0, opacity: 1 }} 
+            <motion.div
+              key="quiz"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
               className="w-full max-w-2xl md:max-w-4xl"
             >
               <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
                 <div className="mb-6 md:mb-8">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs md:text-sm uppercase font-mono">{TRANSLATIONS.quiz.progress}</span>
-                    <span className="text-xs md:text-sm font-bold">{currentQuestionIndex + 1}/{QUIZ_QUESTIONS.length}</span>
+                    <span className="text-xs md:text-sm font-bold">
+                      {currentQuestionIndex + 1}/{QUIZ_QUESTIONS.length}
+                    </span>
                   </div>
                   <div className="h-1 md:h-2 bg-white/10 brutalist-border overflow-hidden">
-                    <motion.div 
-                      className="h-full bg-white" 
+                    <motion.div
+                      className="h-full bg-white"
                       initial={{ width: 0 }}
                       animate={{ width: `${((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100}%` }}
                       transition={{ duration: 0.3 }}
@@ -253,12 +272,12 @@ const App: React.FC = () => {
                       {option}
                     </button>
                   ))}
-                  
+
                   <div className="pt-4 md:pt-6 border-t border-white/10">
                     <input
                       type="text"
                       value={customValue}
-                      onChange={(e) => setCustomValue(e.target.value)}
+                      onChange={e => setCustomValue(e.target.value)}
                       placeholder={TRANSLATIONS.common.customPlaceholder}
                       className="w-full bg-transparent border-2 border-white/20 p-4 md:p-6 mb-3 md:mb-4 focus:border-white outline-none text-sm md:text-base"
                     />
@@ -285,28 +304,28 @@ const App: React.FC = () => {
           )}
 
           {currentStep === AppState.ANALYZING && (
-            <motion.div 
-              key="analyzing" 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              className="text-center space-y-6 md:space-y-8 max-w-2xl w-full"
+            <motion.div
+              key="analyzing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center space-y-6 md:space-y-8 max-w-2xl w-full relative z-10"
             >
-              <ASCIILoader />
+              <div className="h-32 md:h-40" />
               <h2 className="text-3xl md:text-5xl font-heading font-bold">{TRANSLATIONS.analyzing.title}</h2>
               <p className="text-lg md:text-xl text-gray-400 italic">{TRANSLATIONS.analyzing.subtitle}</p>
             </motion.div>
           )}
 
           {currentStep === AppState.RESULTS && prediction && (
-            <motion.div 
-              key="results" 
-              initial={{ opacity: 0, y: 50 }} 
-              animate={{ opacity: 1, y: 0 }} 
+            <motion.div
+              key="results"
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
               className="w-full max-w-2xl md:max-w-4xl space-y-6 md:space-y-8"
             >
               <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
                 <h2 className="text-2xl md:text-4xl font-heading font-bold mb-6 md:mb-8">{TRANSLATIONS.results.title}</h2>
-                
+
                 <div className="mb-8 md:mb-12 p-6 md:p-8 brutalist-border bg-white/5">
                   <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-4 md:mb-6 gap-4">
                     <div>
@@ -363,10 +382,10 @@ const App: React.FC = () => {
           )}
 
           {currentStep === AppState.INTERVIEW && (
-            <motion.div 
-              key="interview" 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
+            <motion.div
+              key="interview"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               className="w-full max-w-2xl md:max-w-4xl"
             >
               <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
@@ -381,7 +400,9 @@ const App: React.FC = () => {
                       {formatTime(timeRemaining)}
                     </p>
                     {interviewScore > 0 && (
-                      <p className="text-xs md:text-sm mt-2">{TRANSLATIONS.interview.score}: {interviewScore}/100</p>
+                      <p className="text-xs md:text-sm mt-2">
+                        {TRANSLATIONS.interview.score}: {interviewScore}/100
+                      </p>
                     )}
                   </div>
                 </div>
@@ -405,8 +426,8 @@ const App: React.FC = () => {
                 <div className="space-y-4 md:space-y-6">
                   <textarea
                     value={userInput}
-                    onChange={(e) => setUserInput(e.target.value)}
-                    onKeyPress={(e) => {
+                    onChange={e => setUserInput(e.target.value)}
+                    onKeyPress={e => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         handleInterviewInput();

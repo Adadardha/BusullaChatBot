@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export const ASCOIIHeader = () => (
+export const ASCIIHeader = () => (
   <div className="text-[6px] leading-[1] font-mono opacity-20 pointer-events-none select-none overflow-hidden h-12">
     {`
     ██████╗ ██╗   ██╗███████╗██╗   ██╗██╗     ██╗      █████╗ 
