@@ -56,7 +56,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Hibrid - kohë të balancuar vetëm dhe në grup",
       "Në lëvizje të vazhdueshme dhe me njerëz të rinj"
     ],
-    category: "Environment"
+    category: "Mjedisi"
   },
   {
     id: 2,
@@ -67,7 +67,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Ndihma direkte për njerëzit e tjerë",
       "Arritja e objektivave financiare dhe rritja e biznesit"
     ],
-    category: "Motivation"
+    category: "Motivimi"
   },
   {
     id: 3,
@@ -78,7 +78,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Kërkoj ndihmë nga ekipi dhe delegoj detyrat",
       "Qëndroj i qetë dhe ndjek procedurat e paracaktuara"
     ],
-    category: "Crisis Management"
+    category: "Menaxhimi i krizës"
   },
   {
     id: 4,
@@ -89,7 +89,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Dizajni dhe estetika",
       "Organizimi dhe menaxhimi i kohës"
     ],
-    category: "Skills"
+    category: "Aftësitë"
   },
   {
     id: 5,
@@ -98,9 +98,9 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Një zyrë moderne korporative",
       "Një studio krijuese ose punishte",
       "Në terren (jashtë zyrës)",
-      "Nga shtëpia ose hapësira coworking"
+      "Nga shtëpia ose hapësira bashkëpunuese"
     ],
-    category: "Environment"
+    category: "Mjedisi"
   },
   {
     id: 6,
@@ -111,18 +111,18 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Mesatare, preferoj metodat e provuara",
       "Nuk ka rëndësi, për sa kohë puna ka impakt"
     ],
-    category: "Innovation"
+    category: "Inovacioni"
   },
   {
     id: 7,
     text: "Si do ta përshkruanit stilin tuaj të mësimit?",
     options: [
       "Mësoj duke lexuar dhe studiuar teori",
-      "Mësoj duke vepruar (hands-on)",
+      "Mësoj duke vepruar (praktikisht)",
       "Mësoj përmes diskutimeve me të tjerët",
       "Mësoj përmes videove dhe ilustrimeve"
     ],
-    category: "Learning"
+    category: "Të mësuarit"
   },
   {
     id: 8,
@@ -133,7 +133,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Të hap biznesin tim personal",
       "Të kontribuoj në një kauzë sociale"
     ],
-    category: "Goals"
+    category: "Qëllimet"
   },
   {
     id: 9,
@@ -144,7 +144,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Duke medituar ose bërë aktivitet fizik",
       "Duke kërkuar feedback dhe mbështetje"
     ],
-    category: "Stress"
+    category: "Stresi"
   },
   {
     id: 10,
@@ -155,6 +155,6 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Menaxhimi dhe ekonomia",
       "Mjekësia dhe shkencat e jetës"
     ],
-    category: "Interests"
+    category: "Interesat"
   }
 ];

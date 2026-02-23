@@ -1,5 +1,5 @@
 {
-  "name": "orientimi-i-karrierës---busulla-digjitale",
+  "name": "orientimi-i-karrier\u00ebs---busulla-digjitale",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,7 +12,6 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "@react-three/fiber": "^9.5.0",
-    "@google/genai": "^1.40.0",
     "framer-motion": "^12.34.0",
     "three": "^0.182.0",
     "@react-three/drei": "^10.7.7"
