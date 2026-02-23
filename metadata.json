@@ -1,0 +1,8 @@
+{
+  "name": "Orientimi i Karrierës - Busulla Digjitale",
+  "description": "Një platformë profesionale për orientimin e karrierës në gjuhën shqipe, duke përdorur AI për parashikime precize dhe përgatitje për intervista.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
