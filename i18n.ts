@@ -214,7 +214,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   },
   {
     id: 7,
-    text: "Si do ta përshkruait stilin tuaj të mësimit?",
+    text: "Si do ta përshkruanit stilin tuaj të mësimit?",
     options: [
       "Mësoj duke lexuar dhe studiuar teori",
       "Mësoj duke vepruar (praktikisht)",
@@ -241,7 +241,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       "Duke u fokusuar plotësisht te puna deri në fund",
       "Duke bërë pushime të shkurtra dhe biseduar me koleget",
       "Duke medituar ose bërë aktivitet fizik",
-      "Duke kërkuar feedback dhe mbështetje",
+      "Duke kërkuar mendime dhe mbështetje",
     ],
     category: "Stresi",
   },
