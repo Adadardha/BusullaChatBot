@@ -24,9 +24,10 @@ const HF_MODEL =
   import.meta.env.VITE_HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3';
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 
-const GEMINI_API_KEY = process.env.API_KEY;
-const GEMINI_MODEL_PRO   = 'gemini-3-pro-preview';
-const GEMINI_MODEL_FLASH = 'gemini-3-flash-preview';
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const geminiAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+const GEMINI_MODEL_PRO   = 'gemini-1.5-pro';
+const GEMINI_MODEL_FLASH = 'gemini-1.5-flash';
 
 const geminiAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
