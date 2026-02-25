@@ -140,14 +140,29 @@ async function callGeminiStructured<T>(
   model: string = GEMINI_MODEL_PRO,
 ): Promise<T> {
   if (!geminiAI) throw new Error('Mungon Gemini API key.');
-  const response: GenerateContentResponse = await geminiAI.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema,
+  async function callGeminiStructured<T>(
+  prompt: string,
+  responseSchema: any, // Përdor any ose Schema nga SDK
+  modelName: string = GEMINI_MODEL_PRO,
+): Promise<T> {
+  if (!geminiAI) throw new Error('Mungon Gemini API key.');
+
+  // 1. Inicializohet modeli
+  const model = geminiAI.getGenerativeModel({ 
+    model: modelName,
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: responseSchema,
     },
   });
+
+  // 2. Thirrja bëhet me strukturën e duhur të mesazhit
+  const result = await model.generateContent(prompt);
+  const response = await result.response;
+  const text = response.text() || '{}';
+  
+  return JSON.parse(text) as T;
+}
   const text = response.text?.trim() || '{}';
   return JSON.parse(text) as T;
 }
