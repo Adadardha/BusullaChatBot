@@ -29,8 +29,6 @@ const geminiAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 const GEMINI_MODEL_PRO   = 'gemini-1.5-pro';
 const GEMINI_MODEL_FLASH = 'gemini-1.5-flash';
 
-const geminiAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
-
 // ─────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────
