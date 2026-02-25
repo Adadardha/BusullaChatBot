@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType as Type, GenerateContentResponse } from "@google/generative-ai";
 import {
   QuizAnswer,
   PredictionResult,
