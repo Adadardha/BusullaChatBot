@@ -122,18 +122,14 @@ async function callHF(
 // Gemini caller (plain text)
 // ─────────────────────────────────────────────
 
-async function callGemini(
-  prompt: string,
-  model: string = GEMINI_MODEL_PRO,
-): Promise<string> {
+async function callGemini(prompt: string, modelName: string = GEMINI_MODEL_PRO): Promise<string> {
   if (!geminiAI) throw new Error('Mungon Gemini API key.');
-  const response: GenerateContentResponse = await geminiAI.models.generateContent({
-    model,
-    contents: prompt,
-  });
-  return response.text?.trim() || '';
-}
 
+  const model = geminiAI.getGenerativeModel({ model: modelName });
+  const result = await model.generateContent(prompt);
+  const response = await result.response;
+  return response.text().trim();
+}
 // ─────────────────────────────────────────────
 // Gemini caller (structured JSON via schema)
 // ─────────────────────────────────────────────
