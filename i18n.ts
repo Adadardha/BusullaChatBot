@@ -133,7 +133,8 @@ export const TRANSLATIONS = {
     newChat: "Bisedë e re",
     quickActions: "Veprime të shpejta",
     welcome: "Përshëndetje! Unë jam asistenti juaj i karrierës 24/7. Si mund t'ju ndihmoj sot?",
-    error: "Ndodhi një gabim. Provo përsëri.",
+    error: "Ndodhi një gabim në lidhjen me shërbimet AI. Siguroni që të keni cilësuar VITE_HF_API_KEY në .env.local ose provoni përsëri më vonë.",
+    apiQuotaExceeded: "Quota e API-t është tejkaluar. Provo përsëri më vonë.",
   },
   quickActions: {
     cvHelp: "Si ta përmirësoj CV-në?",

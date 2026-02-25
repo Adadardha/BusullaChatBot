@@ -1,4 +1,5 @@
-import { GoogleGenerativeAI, SchemaType as Type, GenerateContentResponse } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
+import { SchemaType as Type } from "@google/generative-ai";
 import {
   QuizAnswer,
   PredictionResult,
@@ -25,9 +26,9 @@ const HF_MODEL =
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const geminiAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
-const GEMINI_MODEL_PRO   = 'gemini-1.5-pro';
-const GEMINI_MODEL_FLASH = 'gemini-1.5-flash';
+const geminiAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+const GEMINI_MODEL_PRO   = 'gemini-3-flash-preview';
+const GEMINI_MODEL_FLASH = 'gemini-3-flash-preview';
 
 // ─────────────────────────────────────────────
 // Types
@@ -123,10 +124,11 @@ async function callHF(
 async function callGemini(prompt: string, modelName: string = GEMINI_MODEL_PRO): Promise<string> {
   if (!geminiAI) throw new Error('Mungon Gemini API key.');
 
-  const model = geminiAI.getGenerativeModel({ model: modelName });
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  return response.text().trim();
+  // New @google/genai client: simple text generation
+  const resp = await geminiAI.models.generateContent({ model: modelName, contents: prompt as any });
+  // Response may expose `.text` or `.text()` depending on SDK; normalize both
+  const text = (resp as any).text ?? (typeof (resp as any).text === 'function' ? await (resp as any).text() : undefined) ?? '';
+  return String(text).trim();
 }
 // ─────────────────────────────────────────────
 // Gemini caller (structured JSON via schema)
@@ -134,35 +136,22 @@ async function callGemini(prompt: string, modelName: string = GEMINI_MODEL_PRO):
 
 async function callGeminiStructured<T>(
   prompt: string,
-  responseSchema: object,
-  model: string = GEMINI_MODEL_PRO,
-): Promise<T> {
-  if (!geminiAI) throw new Error('Mungon Gemini API key.');
-  async function callGeminiStructured<T>(
-  prompt: string,
-  responseSchema: any, // Përdor any ose Schema nga SDK
+  responseSchema: any,
   modelName: string = GEMINI_MODEL_PRO,
 ): Promise<T> {
   if (!geminiAI) throw new Error('Mungon Gemini API key.');
 
-  // 1. Inicializohet modeli
-  const model = geminiAI.getGenerativeModel({ 
-    model: modelName,
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: responseSchema,
-    },
-  });
-
-  // 2. Thirrja bëhet me strukturën e duhur të mesazhit
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const text = response.text() || '{}';
-  
-  return JSON.parse(text) as T;
-}
-  const text = response.text?.trim() || '{}';
-  return JSON.parse(text) as T;
+  // Many SDKs don't yet support structured schema parsing uniformly; request JSON and parse locally.
+  const instruction = `${prompt}\n\nKthe vetëm JSON të vlefshëm që përputhet me formatin e kërkuar (pa tekst shtesë).`;
+  const resp = await geminiAI.models.generateContent({ model: modelName, contents: instruction as any });
+  const text = (resp as any).text ?? (typeof (resp as any).text === 'function' ? await (resp as any).text() : undefined) ?? '{}';
+  try {
+    return JSON.parse(String(text)) as T;
+  } catch (err) {
+    // Fallback: try to extract JSON substring
+    const extracted = extractJson(String(text));
+    return safeParse<T>(extracted, {} as T);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -365,12 +354,10 @@ export const getAssistantResponse = async (
     // Try Gemini chat if available (uses flash for speed)
     if (GEMINI_API_KEY && geminiAI) {
       try {
-        const chat = geminiAI.chats.create({
-          model: GEMINI_MODEL_FLASH,
-          config: { systemInstruction: systemPrompt },
-        });
-        const result = await chat.sendMessage({ message: userMessage });
-        if (result.text) return result.text;
+        const prompt = `${systemPrompt}\n\nPërdoruesi: ${userMessage}`;
+        const resp = await geminiAI.models.generateContent({ model: GEMINI_MODEL_FLASH, contents: prompt as any });
+        const text = (resp as any).text ?? (typeof (resp as any).text === 'function' ? await (resp as any).text() : undefined) ?? '';
+        if (String(text).trim()) return String(text).trim();
       } catch (err) {
         console.warn('Gemini assistant failed, falling back to HF:', err);
       }

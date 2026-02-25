@@ -83,9 +83,20 @@ const CareerAssistant: React.FC<CareerAssistantProps> = ({
       }
     } catch (error) {
       console.error('Chat error:', error);
+      
+      let errorContent = TRANSLATIONS.chat.error;
+      const errorStr = String(error).toLowerCase();
+      
+      // Provide more specific error messages
+      if (errorStr.includes('quota exceeded') || errorStr.includes('429')) {
+        errorContent = TRANSLATIONS.chat.apiQuotaExceeded || "Shërbimi AI është i mbingarkuar. Provo përsëri më vonë.";
+      } else if (errorStr.includes('api key') || errorStr.includes('not configured')) {
+        errorContent = "Shërbimi AI nuk është konfiguruar. Kontakto përgjegjësin.";
+      }
+      
       const errorMessage: ChatMessage = {
         role: 'assistant',
-        content: TRANSLATIONS.chat.error,
+        content: errorContent,
         timestamp: Date.now(),
       };
       onSessionUpdate({
