@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { SchemaType as Type } from "@google/generative-ai";
 import {
   QuizAnswer,
   PredictionResult,
@@ -25,10 +24,12 @@ const HF_MODEL =
   import.meta.env.VITE_HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3';
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || (import.meta.env as any).GEMINI_API_KEY;
 const geminiAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
-const GEMINI_MODEL_PRO   = 'gemini-3-flash-preview';
-const GEMINI_MODEL_FLASH = 'gemini-3-flash-preview';
+
+// ✅ FIXED: Correct model names
+const GEMINI_MODEL_PRO   = 'gemini-1.5-flash';
+const GEMINI_MODEL_FLASH = 'gemini-1.5-flash';
 
 // ─────────────────────────────────────────────
 // Types
@@ -118,40 +119,41 @@ async function callHF(
 }
 
 // ─────────────────────────────────────────────
-// Gemini caller (plain text)
+// ✅ FIXED: Gemini caller using correct @google/genai SDK
 // ─────────────────────────────────────────────
 
 async function callGemini(prompt: string, modelName: string = GEMINI_MODEL_PRO): Promise<string> {
   if (!geminiAI) throw new Error('Mungon Gemini API key.');
 
-  // New @google/genai client: simple text generation
-  const resp = await geminiAI.models.generateContent({ model: modelName, contents: prompt as any });
-  // Response may expose `.text` or `.text()` depending on SDK; normalize both
-  const text = (resp as any).text ?? (typeof (resp as any).text === 'function' ? await (resp as any).text() : undefined) ?? '';
-  return String(text).trim();
+  const response = await geminiAI.models.generateContent({
+    model: modelName,
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  });
+
+  // ✅ FIXED: Correct way to get text from @google/genai response
+  return response.text ?? '';
 }
+
 // ─────────────────────────────────────────────
-// Gemini caller (structured JSON via schema)
+// ✅ FIXED: Gemini structured JSON caller
 // ─────────────────────────────────────────────
 
 async function callGeminiStructured<T>(
   prompt: string,
-  responseSchema: any,
+  _responseSchema: any,
   modelName: string = GEMINI_MODEL_PRO,
 ): Promise<T> {
   if (!geminiAI) throw new Error('Mungon Gemini API key.');
 
-  // Many SDKs don't yet support structured schema parsing uniformly; request JSON and parse locally.
-  const instruction = `${prompt}\n\nKthe vetëm JSON të vlefshëm që përputhet me formatin e kërkuar (pa tekst shtesë).`;
-  const resp = await geminiAI.models.generateContent({ model: modelName, contents: instruction as any });
-  const text = (resp as any).text ?? (typeof (resp as any).text === 'function' ? await (resp as any).text() : undefined) ?? '{}';
-  try {
-    return JSON.parse(String(text)) as T;
-  } catch (err) {
-    // Fallback: try to extract JSON substring
-    const extracted = extractJson(String(text));
-    return safeParse<T>(extracted, {} as T);
-  }
+  const instruction = `${prompt}\n\nKthe vetëm JSON të vlefshëm që përputhet me formatin e kërkuar (pa tekst shtesë, pa \`\`\`json).`;
+
+  const response = await geminiAI.models.generateContent({
+    model: modelName,
+    contents: [{ role: 'user', parts: [{ text: instruction }] }],
+  });
+
+  const text = response.text ?? '{}';
+  return safeParse<T>(text, {} as T);
 }
 
 // ─────────────────────────────────────────────
@@ -189,30 +191,6 @@ async function callModel(
 // Career Prediction
 // ─────────────────────────────────────────────
 
-const careerMatchSchema = {
-  type: Type.OBJECT,
-  properties: {
-    title:       { type: Type.STRING, description: 'Career name in Albanian.' },
-    percentage:  { type: Type.NUMBER, description: 'Match percentage (0-100).' },
-    description: { type: Type.STRING, description: 'Short description in Albanian.' },
-    whyFit:      { type: Type.STRING, description: 'Alignment explanation in Albanian.' },
-    strengths:   { type: Type.ARRAY, items: { type: Type.STRING } },
-    growthAreas: { type: Type.ARRAY, items: { type: Type.STRING } },
-    salaryRange: { type: Type.STRING, description: 'Estimated salary range.' },
-    education:   { type: Type.ARRAY, items: { type: Type.STRING } },
-    learningPath: {
-      type: Type.OBJECT,
-      properties: {
-        courses:   { type: Type.ARRAY, items: { type: Type.STRING } },
-        resources: { type: Type.ARRAY, items: { type: Type.STRING } },
-        timeline:  { type: Type.STRING },
-      },
-      required: ['courses', 'resources', 'timeline'],
-    },
-  },
-  required: ['title','percentage','description','whyFit','strengths','growthAreas','salaryRange','education','learningPath'],
-};
-
 async function enrichWithLLM(
   base: PredictionResult,
   answers: QuizAnswer[],
@@ -234,28 +212,40 @@ async function enrichWithLLM(
 }
 
 export const predictCareer = async (answers: QuizAnswer[]): Promise<PredictionResult> => {
+  // ✅ Always compute local result first — works without any API
   const localResult = classifyToPrediction(answers);
 
   if (!HF_API_KEY && !GEMINI_API_KEY) return localResult;
 
-  // Try rich Gemini structured prediction first if Gemini is available
+  // Try Gemini structured prediction
   if (GEMINI_API_KEY) {
     try {
-      return await withRetry(() =>
-        callGeminiStructured<PredictionResult>(
-          `Analyze the following career assessment responses in Albanian and provide the top 3 best-fit career paths.\nResponses: ${JSON.stringify(answers)}`,
-          {
-            type: Type.OBJECT,
-            properties: {
-              primary:      careerMatchSchema,
-              alternatives: { type: Type.ARRAY, items: careerMatchSchema },
-            },
-            required: ['primary', 'alternatives'],
-          },
+      const result = await withRetry(() =>
+        callGeminiStructured<any>(
+          `Analize këto përgjigje të kuizit të karrierës dhe kthe JSON me këto fusha:
+{
+  "primaryCareer": "emri i karrierës kryesore në shqip",
+  "confidence": 0.85,
+  "description": "përshkrim 2-3 fjali pse kjo karrierë",
+  "alternatives": [
+    {"career": "karriera 2", "confidence": 0.70, "description": "përshkrim i shkurtër"},
+    {"career": "karriera 3", "confidence": 0.55, "description": "përshkrim i shkurtër"}
+  ],
+  "learningPath": ["hapi 1", "hapi 2", "hapi 3", "hapi 4", "hapi 5"]
+}
+
+Karriera kryesore sipas analizës lokale: ${localResult.primaryCareer}
+Alternativat: ${localResult.alternatives.map(a => a.career).join(', ')}
+Përgjigjet: ${JSON.stringify(answers.map(a => a.answer))}`,
+          {},
         ),
       );
+      // Validate result has required fields
+      if (result?.primaryCareer && result?.confidence && result?.description) {
+        return result as PredictionResult;
+      }
     } catch (err) {
-      console.warn('Gemini structured prediction failed, falling back to HF enrich:', err);
+      console.warn('Gemini structured prediction failed, falling back to enrich:', err);
     }
   }
 
@@ -312,19 +302,13 @@ export const evaluateFinalInterview = async (
   };
 
   return withRetry(async () => {
-    // Try Gemini structured first
     if (GEMINI_API_KEY) {
       try {
         return await callGeminiStructured<InterviewVerdict>(
-          `Analyze the full interview performance for ${career} and determine if the candidate is hired.\nHistory: ${JSON.stringify(history)}`,
-          {
-            type: Type.OBJECT,
-            properties: {
-              hired:    { type: Type.BOOLEAN },
-              feedback: { type: Type.STRING, description: 'Detailed summary in Albanian.' },
-            },
-            required: ['hired', 'feedback'],
-          },
+          `Analize performancën e plotë të intervistës për ${career} dhe kthe:
+{"hired": true/false, "feedback": "feedback i detajuar në shqip"}
+Historia: ${JSON.stringify(history)}`,
+          {},
         );
       } catch (err) {
         console.warn('Gemini final eval failed, falling back to HF:', err);
@@ -333,7 +317,7 @@ export const evaluateFinalInterview = async (
 
     const text = await callModel([
       { role: 'system', content: 'Ti je menaxher punësimi. Vendos qartë nëse kandidati pranohet dhe jep feedback në shqip.' },
-      { role: 'user', content: `Analizo performancën e plotë të intervistës për ${career}.\nKthe vetëm JSON valid në formatin:\n{"hired": true/false, "feedback": "..."}\nHistoria: ${JSON.stringify(history)}` },
+      { role: 'user', content: `Analizo performancën e plotë të intervistës për ${career}.\nKthe vetëm JSON valid:\n{"hired": true/false, "feedback": "..."}\nHistoria: ${JSON.stringify(history)}` },
     ]);
 
     return safeParse<InterviewVerdict>(text, fallback);
@@ -351,13 +335,11 @@ export const getAssistantResponse = async (
   return withRetry(async () => {
     const systemPrompt = `Ti je "Busulla AI", një career coach për tregun shqiptar. Gjithmonë përgjigju në shqip, profesional, i drejtpërdrejtë dhe praktik. Konteksti i përdoruesit: ${context || 'Këshilla të përgjithshme'}.`;
 
-    // Try Gemini chat if available (uses flash for speed)
     if (GEMINI_API_KEY && geminiAI) {
       try {
         const prompt = `${systemPrompt}\n\nPërdoruesi: ${userMessage}`;
-        const resp = await geminiAI.models.generateContent({ model: GEMINI_MODEL_FLASH, contents: prompt as any });
-        const text = (resp as any).text ?? (typeof (resp as any).text === 'function' ? await (resp as any).text() : undefined) ?? '';
-        if (String(text).trim()) return String(text).trim();
+        const text = await callGemini(prompt, GEMINI_MODEL_FLASH);
+        if (text.trim()) return text.trim();
       } catch (err) {
         console.warn('Gemini assistant failed, falling back to HF:', err);
       }
@@ -406,17 +388,16 @@ export const generateDynamicQuestion = async (
       .join(' | ');
 
     const prompt = `Je intervistues ekspert për pozicionin: ${career}
-        
 Lloji i intervistës: ${modeDescriptions[mode]}
 Niveli i vështirësisë: ${difficultyContext[difficulty]}
 ${weakAreas.length > 0 ? `Fusha që duhen përmirësuar: ${weakAreas.join(', ')}` : ''}
 Përgjigjet e fundit të kandidatit: ${historySummary || 'Asnjë ende'}
 
-KTHE VETËM JSON VALID:
+KTHE VETËM JSON VALID (pa \`\`\`json):
 {
-  "question": "Pyetja në shqip (e qartë dhe koncize)",
+  "question": "Pyetja në shqip",
   "type": "technical ose behavioral",
-  "hints": ["hint 1 pa zbuluar përgjigjen", "hint 2", "hint 3"]
+  "hints": ["hint 1", "hint 2", "hint 3"]
 }`;
 
     const text = await callModel(
@@ -436,12 +417,12 @@ function getFallbackQuestion(
   mode: InterviewMode,
 ): { question: string; type: 'technical' | 'behavioral'; hints: string[] } {
   const technicalQs = [
-    { question: `Çfarë teknologjish ose mjeteish ke përdorur në ${career}?`, type: 'technical' as const, hints: ['Mendo për projektet e fundit', 'Përmend teknologjitë kryesore', 'Flit për rezultatet'] },
-    { question: 'Si e qase një problem kompleks në punë?',                   type: 'technical' as const, hints: ['Përshkrua hap pas hapi', 'Çfarë vendimesh more?', 'Cili ishte rezultati?'] },
+    { question: `Çfarë teknologjish ose mjetesh ke përdorur në ${career}?`, type: 'technical' as const, hints: ['Mendo për projektet e fundit', 'Përmend teknologjitë kryesore', 'Flit për rezultatet'] },
+    { question: 'Si e qase një problem kompleks në punë?', type: 'technical' as const, hints: ['Përshkrua hap pas hapi', 'Çfarë vendimesh more?', 'Cili ishte rezultati?'] },
   ];
   const behavioralQs = [
     { question: 'Na trego për një sfidë që e ke kapërcyer në ekip.', type: 'behavioral' as const, hints: ['Çfarë ndodhi saktësisht?', 'Cili ishte roli yt?', 'Çfarë mësove?'] },
-    { question: 'Si punon nën presion?',                              type: 'behavioral' as const, hints: ['Jep një shembull konkret', 'Si e menaxhon kohën?', 'Çfarë strategjish përdor?'] },
+    { question: 'Si punon nën presion?', type: 'behavioral' as const, hints: ['Jep një shembull konkret', 'Si e menaxhon kohën?', 'Çfarë strategjish përdor?'] },
   ];
   const pool =
     mode === InterviewMode.BEHAVIORAL ? behavioralQs :
@@ -465,7 +446,7 @@ export const evaluateAnswerWithFeedback = async (
     score: 60,
     strengths: ['Përgjigjja është relevante'],
     improvements: ['Shto më shumë detaje dhe shembuj'],
-    detailedFeedback: 'Përgjigjja ka bazë të mirë, por mund të thellohet më shumë me shembuj konkretë.',
+    detailedFeedback: 'Përgjigjja ka bazë të mirë, por mund të thellohet me shembuj konkretë.',
     technicalAccuracy: 60,
     communication: 70,
     problemSolving: 55,
@@ -476,18 +457,17 @@ export const evaluateAnswerWithFeedback = async (
 
 Pyetja: ${question}
 Përgjigjja: ${answer}
-Lloji i intervistës: ${mode}
-Vështirësia: ${difficulty}
+Lloji: ${mode}, Vështirësia: ${difficulty}
 
-KTHE VETËM JSON VALID:
+KTHE VETËM JSON VALID (pa \`\`\`json):
 {
-  "score": 0-100,
+  "score": 75,
   "strengths": ["pika e fortë 1", "pika e fortë 2"],
   "improvements": ["përmirësim 1", "përmirësim 2"],
   "detailedFeedback": "Feedback i detajuar në shqip",
-  "technicalAccuracy": 0-100,
-  "communication": 0-100,
-  "problemSolving": 0-100
+  "technicalAccuracy": 80,
+  "communication": 70,
+  "problemSolving": 75
 }`;
 
     const text = await callModel(
@@ -575,21 +555,17 @@ export const generateInterviewReport = async (
     session.overallScore >= 70 ? 'hired' :
     session.overallScore >= 50 ? 'consider' : 'rejected';
 
-  const summaryPrompt = `Gjenero një raport përfundimtar për intervistën.
-
-Pozicioni: ${session.career}
-Rezultati i përgjithshëm: ${session.overallScore}/100
-Kategoria: Technical ${categoryScores.technical}%, Communication ${categoryScores.communication}%, Problem Solving ${categoryScores.problemSolving}%
-Fusha të dobëta: ${session.weakAreas.join(', ') || 'Asnjë'}
-Fusha të forta: ${session.strongAreas.join(', ') || 'Asnjë'}
-
-KTHE VETËM JSON VALID:
+  const summaryPrompt = `Gjenero raport interviste. Kthe VETËM JSON VALID (pa \`\`\`json):
 {
-  "summary": "Përmbledhje në 2-3 fjali në shqip",
+  "summary": "Përmbledhje 2-3 fjali në shqip",
   "recommendations": ["rekomandim 1", "rekomandim 2"],
-  "weakTopics": ["temë e dobët 1", "temë e dobët 2"],
-  "practiceSuggestions": ["sugjerim praktike 1", "sugjerim 2"]
-}`;
+  "weakTopics": ["temë e dobët 1"],
+  "practiceSuggestions": ["sugjerim 1", "sugjerim 2"]
+}
+
+Pozicioni: ${session.career}, Rezultati: ${session.overallScore}/100
+Fusha të dobëta: ${session.weakAreas.join(', ') || 'Asnjë'}
+Fusha të forta: ${session.strongAreas.join(', ') || 'Asnjë'}`;
 
   const fallbackReport = {
     summary: `Intervista përfundoi me rezultat ${session.overallScore}/100. ${verdict === 'hired' ? 'Kandidati tregon gatishmëri.' : verdict === 'consider' ? 'Ka potencial, por nevojiten përmirësime.' : 'Duhen më shumë përgatitje.'}`,
@@ -601,7 +577,7 @@ KTHE VETËM JSON VALID:
   try {
     const text = await callModel(
       [
-        { role: 'system', content: 'Ti je një career coach që jep raporte profesionale intervistash në shqip.' },
+        { role: 'system', content: 'Ti je career coach që jep raporte profesionale intervistash në shqip.' },
         { role: 'user', content: summaryPrompt },
       ],
       0.6,
@@ -614,12 +590,12 @@ KTHE VETËM JSON VALID:
       mode:      session.mode,
       overallScore: session.overallScore,
       verdict,
-      summary:  aiReport.summary,
+      summary:  aiReport.summary || fallbackReport.summary,
       categoryScores,
       answersReview: answers,
-      recommendations:     aiReport.recommendations,
-      weakTopics:          aiReport.weakTopics,
-      practiceSuggestions: aiReport.practiceSuggestions,
+      recommendations:     aiReport.recommendations || fallbackReport.recommendations,
+      weakTopics:          aiReport.weakTopics || fallbackReport.weakTopics,
+      practiceSuggestions: aiReport.practiceSuggestions || fallbackReport.practiceSuggestions,
       duration: session.endTime ? session.endTime - session.startTime : 0,
     };
   } catch {
@@ -649,8 +625,8 @@ export const getHint = async (
   return withRetry(async () => {
     const text = await callModel(
       [
-        { role: 'system', content: 'Ti je një mentor që jep hints të dobishëm pa zbuluar përgjigjen e plotë. Përgjigju në shqip.' },
-        { role: 'user', content: `Për pyetjen: "${question}" në kontekstin e karrierës ${career}, jep një hint të shkurtër që ndihmon kandidatin të kuptojë drejtimin e përgjigjes pa e zbuluar atë.` },
+        { role: 'system', content: 'Ti je mentor që jep hints të dobishëm pa zbuluar përgjigjen. Përgjigju në shqip.' },
+        { role: 'user', content: `Për pyetjen: "${question}" në kontekstin e karrierës ${career}, jep një hint të shkurtër që ndihmon kandidatin pa zbuluar përgjigjen.` },
       ],
       0.7,
     );
@@ -659,7 +635,7 @@ export const getHint = async (
 };
 
 // ─────────────────────────────────────────────
-// Career Chat Assistant (Full context)
+// Career Chat Assistant
 // ─────────────────────────────────────────────
 
 export const getCareerAssistantResponse = async (
@@ -682,25 +658,9 @@ export const getCareerAssistantResponse = async (
     if (userContext?.weakAreas?.length) contextParts.push(`Fusha për përmirësim: ${userContext.weakAreas.join(', ')}`);
 
     const systemPrompt = `Ti je "Busulla AI", një asistent karriere 24/7 për tregun shqiptar.
-
-KARAKTERISTIKAT TUAJA:
-- I disponueshëm gjithmonë për këshilla karriere
-- I njohur me tregun e punës në Shqipëri dhe Kosovë
-- I specializuar në zhvillim profesional, CV, intervista, dhe zgjedhje karriere
-- I drejtpërdrejtë, praktik dhe inkurajues
-
-KONTEKSTI I PËRDORUESIT:
-${contextParts.length > 0 ? contextParts.join('\n') : 'Asnjë kontekst specifik'}
-
-HISTORIA E BISEDËS:
-${historyContext || 'Bisedë e re'}
-
-INSTRUKSIONET:
-- Përgjigju në shqip, profesional dhe miqësor
-- Jep këshilla konkrete dhe të zbatueshme
-- Nëse pyetja është për CV, jep këshilla specifike
-- Nëse pyetja është për intervistë, jep tips praktikë
-- Nëse pyetja është e paqartë, kërko sqarime`;
+Përgjigju në shqip, profesional dhe miqësor. Jep këshilla konkrete dhe praktike.
+Konteksti: ${contextParts.join('\n') || 'Asnjë'}
+Historia: ${historyContext || 'Bisedë e re'}`;
 
     const text = await callModel(
       [
