@@ -232,35 +232,83 @@ async function enrichWithLLM(
   }
   return base;
 }
-
 export const predictCareer = async (answers: QuizAnswer[]): Promise<PredictionResult> => {
+  // Gjithmonë llogarit rezultatin lokal fillimisht (punon pa API)
   const localResult = classifyToPrediction(answers);
 
-  if (!HF_API_KEY && !GEMINI_API_KEY) return localResult;
-
-  // Try rich Gemini structured prediction first if Gemini is available
-  if (GEMINI_API_KEY) {
-    try {
-      return await withRetry(() =>
-        callGeminiStructured<PredictionResult>(
-          `Analyze the following career assessment responses in Albanian and provide the top 3 best-fit career paths.\nResponses: ${JSON.stringify(answers)}`,
-          {
-            type: Type.OBJECT,
-            properties: {
-              primary:      careerMatchSchema,
-              alternatives: { type: Type.ARRAY, items: careerMatchSchema },
-            },
-            required: ['primary', 'alternatives'],
-          },
-        ),
-      );
-    } catch (err) {
-      console.warn('Gemini structured prediction failed, falling back to HF enrich:', err);
-    }
+  // Nëse nuk ka asnjë API key, kthe rezultatin lokal direkt
+  if (!HF_API_KEY && !GEMINI_API_KEY) {
+    return localResult;
   }
 
-  return withRetry(() => enrichWithLLM(localResult, answers));
+  const answersText = answers.map((a, i) => `${i + 1}. ${a.answer}`).join('\n');
+
+  const prompt = `Bazuar në këto përgjigje të kuizit të karrierës, analizo dhe kthe një objekt JSON.
+Karriera kryesore sipas analizës: ${localResult.primaryCareer}
+Alternativat: ${localResult.alternatives.map(a => a.career).join(', ')}
+
+Përgjigjet:
+${answersText}
+
+Kthe VETËM JSON të vlefshëm, pa asnjë tekst tjetër, pa \`\`\`json:
+{
+  "primaryCareer": "${localResult.primaryCareer}",
+  "confidence": ${localResult.confidence},
+  "description": "shkruaj 2-3 fjali në shqip pse kjo karrierë i përshtatet personit bazuar në përgjigjet",
+  "alternatives": [
+    {"career": "${localResult.alternatives[0]?.career || ''}", "confidence": ${localResult.alternatives[0]?.confidence || 0.5}, "description": "pse kjo alternativë"},
+    {"career": "${localResult.alternatives[1]?.career || ''}", "confidence": ${localResult.alternatives[1]?.confidence || 0.4}, "description": "pse kjo alternativë"}
+  ],
+  "learningPath": ["hapi 1", "hapi 2", "hapi 3", "hapi 4", "hapi 5"]
+}`;
+
+  try {
+    // Provo Gemini
+    if (GEMINI_API_KEY && geminiAI) {
+      const resp = await withRetry(async () => {
+        const response = await geminiAI.models.generateContent({
+          model: GEMINI_MODEL_PRO,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        });
+        return response.text ?? '';
+      });
+
+      if (resp) {
+        const parsed = safeParse<PredictionResult>(resp, localResult);
+        // Valido që ka fushat e nevojshme
+        if (parsed.primaryCareer && parsed.description && parsed.alternatives?.length) {
+          return parsed;
+        }
+      }
+    }
+
+    // Provo HuggingFace
+    if (HF_API_KEY) {
+      const resp = await withRetry(() =>
+        callHF([
+          { role: 'system', content: 'Ti je këshilltar karriere. Kthe vetëm JSON të vlefshëm, asnjë tekst tjetër.' },
+          { role: 'user', content: prompt },
+        ], 0.3)
+      );
+
+      if (resp) {
+        const parsed = safeParse<PredictionResult>(resp, localResult);
+        if (parsed.primaryCareer && parsed.description && parsed.alternatives?.length) {
+          return parsed;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('AI enrichment failed, using local result:', err);
+  }
+
+  // Fallback: rezultati lokal është gjithmonë i saktë
+  return localResult;
 };
+
+
+
+  
 
 // ─────────────────────────────────────────────
 // Interview Question Generation
