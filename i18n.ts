@@ -104,7 +104,7 @@ export const TRANSLATIONS = {
     verdicts: {
       hired: "PRANUAR",
       consider: "NË KONSIDERATË",
-      rejected: "NUK PRANUAR",
+      rejected: "I REFUZUAR",
     },
     summary: "Përmbledhje",
     categoryScores: "Rezultatet sipas Kategorive",
@@ -122,11 +122,11 @@ export const TRANSLATIONS = {
     minutes: "minuta",
     newInterview: "INTERVISTË E RE",
     backToResults: "KTHEHU TE REZULTATET",
-    exportReport: "EKSPORTO RAPORTIN",
+    exportReport: "sHKARKO RAPORTIN",
   },
   chat: {
     title: "Asistenti i Karrierës",
-    subtitle: "Këshilltar juaj 24/7",
+    subtitle: "Këshilltari juaj 24/7",
     placeholder: "Shkruani pyetjen tuaj...",
     send: "Dërgo",
     minimized: "Asistenti",
