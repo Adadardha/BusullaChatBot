@@ -3,11 +3,13 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 
-const BRONZE = '#cd7f32';
-const GOLD = '#d4a017';
-const DARK_GOLD = '#8b6914';
-const AGED_BRONZE = '#6d4c2a';
-const WARM_WHITE = '#f5e6c8';
+const BRONZE = '#bf7b37';
+const GOLD = '#d8a437';
+const DARK_GOLD = '#8e651a';
+const AGED_BRONZE = '#5f4024';
+const WARM_WHITE = '#f4e2bf';
+const DEEP_NAVY = '#081224';
+const NIGHT_BLUE = '#101c32';
 
 interface MaterialProps {
   color: string;
@@ -76,16 +78,16 @@ function DecorativeNotches({ radius, count, color }: { radius: number; count: nu
 function CompassNeedle() {
   return (
     <group>
-      <mesh position={[0, 0.28, 0.02]}>
-        <coneGeometry args={[0.04, 0.35, 6]} />
-        <meshStandardMaterial color="#cc2200" metalness={0.7} roughness={0.3} emissive="#880000" emissiveIntensity={0.3} />
+      <mesh position={[0, 0.3, 0.02]}>
+        <coneGeometry args={[0.042, 0.43, 12]} />
+        <meshStandardMaterial color="#d0341d" metalness={0.8} roughness={0.25} emissive="#94160d" emissiveIntensity={0.28} />
       </mesh>
-      <mesh position={[0, -0.21, 0.02]} rotation={[0, 0, Math.PI]}>
-        <coneGeometry args={[0.035, 0.28, 6]} />
-        <MetalMaterial color={AGED_BRONZE} metalness={0.8} roughness={0.35} />
+      <mesh position={[0, -0.25, 0.02]} rotation={[0, 0, Math.PI]}>
+        <coneGeometry args={[0.036, 0.35, 12]} />
+        <MetalMaterial color={WARM_WHITE} metalness={0.88} roughness={0.2} />
       </mesh>
       <mesh position={[0, 0, 0.025]}>
-        <cylinderGeometry args={[0.045, 0.045, 0.04, 12]} />
+        <cylinderGeometry args={[0.055, 0.055, 0.045, 20]} />
         <MetalMaterial color={GOLD} metalness={0.95} roughness={0.1} />
       </mesh>
     </group>
@@ -93,32 +95,14 @@ function CompassNeedle() {
 }
 
 function CompassRose() {
-  const points = useMemo(() => {
-    const pts: THREE.Vector3[] = [];
-    const count = 8;
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
-      const isCardinal = i % 2 === 0;
-      const outerR = isCardinal ? 0.55 : 0.38;
-      const innerR = 0.1;
-      const prevAngle = ((i - 0.5) / count) * Math.PI * 2 - Math.PI / 2;
-      const nextAngle = ((i + 0.5) / count) * Math.PI * 2 - Math.PI / 2;
-      pts.push(
-        new THREE.Vector3(Math.cos(prevAngle) * innerR, Math.sin(prevAngle) * innerR, 0),
-        new THREE.Vector3(Math.cos(angle) * outerR, Math.sin(angle) * outerR, 0),
-        new THREE.Vector3(Math.cos(nextAngle) * innerR, Math.sin(nextAngle) * innerR, 0),
-      );
-    }
-    return pts;
-  }, []);
-
   const geometry = useMemo(() => {
     const shape = new THREE.Shape();
-    const count = 8;
+    const count = 16;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
-      const isCardinal = i % 2 === 0;
-      const outerR = isCardinal ? 0.55 : 0.38;
+      const isPrimary = i % 4 === 0;
+      const isSecondary = i % 2 === 0;
+      const outerR = isPrimary ? 0.57 : (isSecondary ? 0.44 : 0.34);
       const innerR = 0.1;
       const prevAngle = ((i - 0.5) / count) * Math.PI * 2 - Math.PI / 2;
       const nextAngle = ((i + 0.5) / count) * Math.PI * 2 - Math.PI / 2;
@@ -138,7 +122,10 @@ function CompassRose() {
   return (
     <group position={[0, 0, 0.005]}>
       <mesh geometry={geometry}>
-        <meshStandardMaterial color={DARK_GOLD} metalness={0.7} roughness={0.4} side={THREE.DoubleSide} />
+        <meshStandardMaterial color={DARK_GOLD} metalness={0.78} roughness={0.36} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh rotation={[0, 0, Math.PI / 8]} geometry={geometry} position={[0, 0, -0.002]}>
+        <meshStandardMaterial color={AGED_BRONZE} metalness={0.65} roughness={0.45} side={THREE.DoubleSide} opacity={0.9} transparent />
       </mesh>
     </group>
   );
@@ -146,10 +133,10 @@ function CompassRose() {
 
 function DirectionalMarkers() {
   const markers = [
-    { label: 'V', position: [0, 0.82, 0.06] as [number, number, number], color: '#ff6644' },
-    { label: 'J', position: [0, -0.82, 0.06] as [number, number, number], color: WARM_WHITE },
-    { label: 'P', position: [-0.82, 0, 0.06] as [number, number, number], color: WARM_WHITE },
-    { label: 'L', position: [0.82, 0, 0.06] as [number, number, number], color: WARM_WHITE },
+    { label: 'N', position: [0, 0.82, 0.06] as [number, number, number], color: '#ff7b5a' },
+    { label: 'S', position: [0, -0.82, 0.06] as [number, number, number], color: WARM_WHITE },
+    { label: 'W', position: [-0.82, 0, 0.06] as [number, number, number], color: WARM_WHITE },
+    { label: 'E', position: [0.82, 0, 0.06] as [number, number, number], color: WARM_WHITE },
   ];
 
   return (
@@ -159,7 +146,7 @@ function DirectionalMarkers() {
           <div
             style={{
               color,
-              fontSize: '13px',
+              fontSize: '14px',
               fontFamily: "'Space Mono', monospace",
               fontWeight: 700,
               letterSpacing: '0.05em',
@@ -205,16 +192,17 @@ function TickMarks({ radius, count, color }: { radius: number; count: number; co
     return Array.from({ length: count }).map((_, i) => {
       const angle = (i / count) * Math.PI * 2;
       const isCardinal = i % (count / 4) === 0;
-      const length = isCardinal ? 0.09 : 0.045;
+      const isInterCardinal = i % (count / 8) === 0;
+      const length = isCardinal ? 0.12 : (isInterCardinal ? 0.075 : 0.045);
       const innerR = radius - length / 2;
       const outerR = radius + length / 2;
-      return { angle, innerR, outerR, isCardinal, key: i };
+      return { angle, innerR, outerR, isCardinal, isInterCardinal, key: i };
     });
   }, [radius, count]);
 
   return (
     <>
-      {ticks.map(({ angle, innerR, outerR, isCardinal, key }) => (
+      {ticks.map(({ angle, innerR, outerR, isCardinal, isInterCardinal, key }) => (
         <mesh
           key={key}
           position={[
@@ -224,8 +212,8 @@ function TickMarks({ radius, count, color }: { radius: number; count: number; co
           ]}
           rotation={[0, 0, angle + Math.PI / 2]}
         >
-          <boxGeometry args={[isCardinal ? 0.02 : 0.012, outerR - innerR, 0.015]} />
-          <MetalMaterial color={isCardinal ? GOLD : color} metalness={0.8} roughness={0.3} emissiveIntensity={isCardinal ? 0.1 : 0.02} />
+          <boxGeometry args={[isCardinal ? 0.024 : (isInterCardinal ? 0.016 : 0.01), outerR - innerR, 0.015]} />
+          <MetalMaterial color={isCardinal ? GOLD : (isInterCardinal ? BRONZE : color)} metalness={0.8} roughness={0.3} emissiveIntensity={isCardinal ? 0.1 : 0.02} />
         </mesh>
       ))}
     </>
@@ -260,20 +248,20 @@ function CompassGroup({ isSpinning, rotationSpeed }: CompassGroupProps) {
     <group>
       <group ref={outerGroupRef}>
         <mesh>
-          <torusGeometry args={[1.0, 0.055, 16, 80]} />
+          <torusGeometry args={[1.0, 0.06, 20, 96]} />
           <MetalMaterial color={BRONZE} metalness={0.88} roughness={0.22} emissiveIntensity={0.04} />
         </mesh>
         <mesh position={[0, 0, 0]}>
-          <torusGeometry args={[0.95, 0.025, 12, 80]} />
+          <torusGeometry args={[0.95, 0.024, 16, 96]} />
           <MetalMaterial color={DARK_GOLD} metalness={0.9} roughness={0.18} />
         </mesh>
         <mesh>
-          <torusGeometry args={[1.06, 0.03, 12, 80]} />
+          <torusGeometry args={[1.08, 0.028, 14, 96]} />
           <MetalMaterial color={AGED_BRONZE} metalness={0.82} roughness={0.3} />
         </mesh>
-        <DecorativeSpheres radius={1.0} count={32} size={0.022} color={GOLD} />
+        <DecorativeSpheres radius={1.0} count={48} size={0.018} color={GOLD} />
         <DecorativeSpheres radius={1.0} count={8} size={0.04} color={BRONZE} />
-        <TickMarks radius={0.88} count={72} color={AGED_BRONZE} />
+        <TickMarks radius={0.875} count={72} color={AGED_BRONZE} />
       </group>
 
       <group ref={innerRingRef}>
@@ -291,22 +279,27 @@ function CompassGroup({ isSpinning, rotationSpeed }: CompassGroupProps) {
       <mesh>
         <circleGeometry args={[0.62, 64]} />
         <meshStandardMaterial
-          color="#0a0804"
-          metalness={0.3}
-          roughness={0.8}
+          color={NIGHT_BLUE}
+          metalness={0.45}
+          roughness={0.55}
           transparent
-          opacity={0.95}
+          opacity={0.96}
         />
       </mesh>
       <mesh position={[0, 0, -0.01]}>
         <circleGeometry args={[0.98, 64]} />
         <meshStandardMaterial
-          color="#0d0a06"
-          metalness={0.2}
-          roughness={0.9}
+          color={DEEP_NAVY}
+          metalness={0.28}
+          roughness={0.7}
           transparent
-          opacity={0.85}
+          opacity={0.9}
         />
+      </mesh>
+
+      <mesh position={[0, 0, -0.028]}>
+        <cylinderGeometry args={[1.02, 1.02, 0.04, 64]} />
+        <meshStandardMaterial color="#050910" roughness={0.85} metalness={0.18} />
       </mesh>
 
       <CompassRose />
@@ -322,7 +315,7 @@ function CompassGroup({ isSpinning, rotationSpeed }: CompassGroupProps) {
         <MetalMaterial color={GOLD} metalness={0.95} roughness={0.1} emissiveIntensity={0.12} />
       </mesh>
       <mesh position={[0, 0, 0.06]}>
-        <sphereGeometry args={[0.03, 12, 12]} />
+        <sphereGeometry args={[0.03, 20, 20]} />
         <MetalMaterial color={WARM_WHITE} metalness={0.9} roughness={0.12} emissiveIntensity={0.2} />
       </mesh>
 
@@ -357,10 +350,10 @@ const Compass: React.FC<CompassProps> = ({ isSpinning = false, rotationSpeed = 1
         style={{ background: 'transparent' }}
       >
         <ambientLight intensity={0.35} color="#fff8e7" />
-        <pointLight position={[3, 3, 4]} intensity={2.5} color="#ffd580" castShadow={false} />
-        <pointLight position={[-3, -2, 3]} intensity={1.2} color="#c87941" />
-        <pointLight position={[0, 0, 5]} intensity={0.8} color="#ffffff" />
-        <directionalLight position={[2, 4, 3]} intensity={1.0} color="#ffe4b5" />
+        <pointLight position={[3, 3, 4]} intensity={2.1} color="#ffd89b" castShadow={false} />
+        <pointLight position={[-3, -2, 3]} intensity={1.0} color="#8aa4d9" />
+        <pointLight position={[0, 0, 5]} intensity={0.9} color="#ffffff" />
+        <directionalLight position={[2, 4, 3]} intensity={1.15} color="#ffe4b5" />
         <CompassGroup isSpinning={isSpinning} rotationSpeed={rotationSpeed} />
       </Canvas>
     </div>
