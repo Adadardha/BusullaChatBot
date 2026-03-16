@@ -632,27 +632,6 @@ const App: React.FC = () => {
                   </div>
                 )}
 )}
-
-                {/* KËTU FILLON KODI I RI QË DUHET TË SHTOSH */}
-                <div className="mt-12 p-8 bg-black text-white brutalist-border">
-                  <h3 className="text-xl font-heading font-bold uppercase italic mb-6 border-b border-white/20 pb-2">Analiza ML (Machine Learning)</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-mono opacity-50 uppercase">Besueshmëria</p>
-                      <p className="text-3xl font-heading font-black">{(prediction.confidence * 100).toFixed(1)}%</p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-mono opacity-50 uppercase">Saktësia e Modelit</p>
-                      <p className="text-3xl font-heading font-black">94.2%</p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-mono opacity-50 uppercase">Vërtetimi i Kryqëzuar</p>
-                      <p className="text-3xl font-heading font-black">KALUAR</p>
-                    </div>
-                  </div>
-                </div> }
-                {/* KËTU MBARON KODI I RI */}
-
                 {prediction.learningPath && (
                 {prediction.learningPath && (
                   <div className="mb-8 md:mb-12">
