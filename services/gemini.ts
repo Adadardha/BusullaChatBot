@@ -27,8 +27,8 @@ const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const geminiAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
-const GEMINI_MODEL_PRO   = 'gemini-3-flash-preview';
-const GEMINI_MODEL_FLASH = 'gemini-3-flash-preview';
+const GEMINI_MODEL_PRO   = 'gemini-2.0-flash';
+const GEMINI_MODEL_FLASH = 'gemini-2.0-flash';
 
 // ─────────────────────────────────────────────
 // Types
