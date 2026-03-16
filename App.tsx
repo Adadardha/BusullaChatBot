@@ -650,7 +650,7 @@ const App: React.FC = () => {
                       <p className="text-3xl font-heading font-black">KALUAR</p>
                     </div>
                   </div>
-                </div>
+                </div> }
                 {/* KËTU MBARON KODI I RI */}
 
                 {prediction.learningPath && (
