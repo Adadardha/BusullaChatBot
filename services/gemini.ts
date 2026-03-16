@@ -1,106 +1,729 @@
-import { GoogleGenAI } from "@google/genai";
-import { PredictionResult, CareerMatch } from "../types";
+import React, { useState, useEffect, Suspense, useCallback } from 'react';
+import {
+  AppState,
+  QuizAnswer,
+  PredictionResult,
+  InterviewMode,
+  DifficultyLevel,
+  InterviewSession,
+  InterviewReport as InterviewReportType,
+  ChatSession,
+} from './types';
+import {
+  TRANSLATIONS,
+  QUIZ_QUESTIONS,
+} from './i18n';
+import {
+  predictCareer,
+  generateDynamicQuestion,
+  evaluateAnswerWithFeedback,
+  determineNextDifficulty,
+  generateInterviewReport,
+  getHint,
+} from './services/gemini';
+import { classifyCareer } from './services/classifier';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ASCIIHeader, ASCIIGrid } from './Decorations';
+import Compass from './components/3D/Compass';
+import InterviewSetup from './components/interview/InterviewSetup';
+import InterviewSessionComponent from './components/interview/InterviewSession';
+import InterviewReport from './components/interview/InterviewReport';
+import CareerAssistant from './components/chat/CareerAssistant';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const CHAT_SESSION_KEY = 'busulla-chat-session';
+const MAX_QUESTIONS = 7;
 
-const withRetry = async <T>(fn: () => Promise<T>, retries = 3): Promise<T> => {
-  try {
-    return await fn();
-  } catch (error) {
-    if (retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return withRetry(fn, retries - 1);
-    }
-    throw error;
-  }
-};
+const App: React.FC = () => {
+  const [currentStep, setCurrentStep] = useState<AppState>(AppState.LANDING);
+  const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [customValue, setCustomValue] = useState('');
+  const [prediction, setPrediction] = useState<PredictionResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [mlScores, setMlScores] = useState<Array<{ career: string; confidence: number }>>([]);
 
-export const predictCareer = async (answers: any[]): Promise<PredictionResult> => {
-  return withRetry(async () => {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Analizo këto përgjigje të kuizit të orientimit në karrierë dhe sugjero karrierën ideale në tregun shqiptar: ${JSON.stringify(answers)}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            primary: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-                percentage: { type: "number" },
-                description: { type: "string" },
-                whyFit: { type: "string" },
-                salaryRange: { type: "string" },
-                education: { type: "array", items: { type: "string" } },
-                learningPath: {
-                  type: "object",
-                  properties: {
-                    courses: { type: "array", items: { type: "string" } },
-                    resources: { type: "array", items: { type: "string" } },
-                    timeline: { type: "string" }
-                  }
-                }
-              }
-            },
-            alternatives: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  title: { type: "string" },
-                  percentage: { type: "number" },
-                  description: { type: "string" }
-                }
-              }
-            }
-          }
+  // Interview Setup State
+  const [interviewMode, setInterviewMode] = useState<InterviewMode>(InterviewMode.MIXED);
+  const [interviewDifficulty, setInterviewDifficulty] = useState<DifficultyLevel>(DifficultyLevel.MEDIUM);
+
+  // Interview Session State
+  const [interviewSession, setInterviewSession] = useState<InterviewSession | null>(null);
+  const [interviewInput, setInterviewInput] = useState('');
+  const [isGeneratingQuestion, setIsGeneratingQuestion] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [interviewReport, setInterviewReport] = useState<InterviewReportType | null>(null);
+
+  // Chat State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatSession, setChatSession] = useState<ChatSession>(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_SESSION_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.messages && Array.isArray(parsed.messages)) {
+          return parsed;
         }
       }
-    });
-
-    return JSON.parse(response.text);
+    } catch {
+      // ignore
+    }
+    return { messages: [], context: { userPreferences: {} }, lastUpdated: Date.now() };
   });
-};
 
-export const getAssistantResponse = async (userMessage: string, career?: string): Promise<string> => {
-  const hfToken = process.env.VITE_HF_API_KEY || (import.meta as any).env?.VITE_HF_API_KEY;
-  const hfModel = process.env.VITE_HF_MODEL || (import.meta as any).env?.VITE_HF_MODEL || "mistralai/Mistral-7B-Instruct-v0.3";
-
-  if (hfToken) {
+  // Persist chat session
+  useEffect(() => {
     try {
-      const response = await fetch(
-        `https://api-inference.huggingface.co/models/${hfModel}`,
-        {
-          headers: { Authorization: `Bearer ${hfToken}`, "Content-Type": "application/json" },
-          method: "POST",
-          body: JSON.stringify({
-            inputs: `<s>[INST] Ti je "Busulla AI", një trajner karriere ekspert për tregun shqiptar. Përgjigju gjithmonë në shqip. Je profesional, i drejtpërdrejtë (brutalist) dhe shumë ndihmues. Konteksti i përdoruesit: ${career || 'Këshilla të përgjithshme'}. Pyetja: ${userMessage} [/INST]`,
-          }),
-        }
+      localStorage.setItem(CHAT_SESSION_KEY, JSON.stringify(chatSession));
+    } catch {
+      // ignore
+    }
+  }, [chatSession]);
+
+  const startQuiz = () => setCurrentStep(AppState.QUIZ);
+
+  const handleAnswer = (answer: string, isCustom = false) => {
+    const newAnswers = [...quizAnswers];
+    newAnswers[currentQuestionIndex] = {
+      questionId: QUIZ_QUESTIONS[currentQuestionIndex].id,
+      answer,
+      isCustom,
+    };
+    setQuizAnswers(newAnswers);
+    setCustomValue('');
+
+    if (currentQuestionIndex < QUIZ_QUESTIONS.length - 1) {
+      setCurrentQuestionIndex((prev) => prev + 1);
+    } else {
+      processResults(newAnswers);
+    }
+  };
+
+  const processResults = async (finalAnswers: QuizAnswer[]) => {
+    setCurrentStep(AppState.ANALYZING);
+    setIsLoading(true);
+    try {
+      const scores = classifyCareer(finalAnswers);
+      setMlScores(scores.map((s) => ({ career: s.career, confidence: s.confidence })));
+      const result = await predictCareer(finalAnswers);
+      setPrediction(result);
+      setCurrentStep(AppState.RESULTS);
+    } catch (error) {
+      console.error(error);
+      setCurrentStep(AppState.RESULTS);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startInterviewSetup = () => {
+    if (!prediction) return;
+    setCurrentStep(AppState.INTERVIEW_SETUP);
+  };
+
+  const startInterview = useCallback(async () => {
+    if (!prediction) return;
+
+    const sessionId = `interview-${Date.now()}`;
+    const newSession: InterviewSession = {
+      id: sessionId,
+      career: prediction.primaryCareer,
+      mode: interviewMode,
+      messages: [],
+      currentDifficulty: interviewDifficulty,
+      overallScore: 0,
+      weakAreas: [],
+      strongAreas: [],
+      startTime: Date.now(),
+      isComplete: false,
+      questionsAnswered: 0,
+      hintsUsed: 0,
+      maxHints: 3,
+    };
+
+    setInterviewSession(newSession);
+    setCurrentStep(AppState.INTERVIEW_SESSION);
+    setInterviewInput('');
+    setInterviewReport(null);
+
+    // Generate first question
+    setIsGeneratingQuestion(true);
+    try {
+      const result = await generateDynamicQuestion(
+        prediction.primaryCareer,
+        interviewMode,
+        interviewDifficulty,
+        [],
       );
-      const result = await response.json();
-      if (result && result[0] && result[0].generated_text) {
-        const text = result[0].generated_text;
-        const parts = text.split('[/INST]');
-        return parts[parts.length - 1].trim();
+      const questionMessage = {
+        role: 'assistant' as const,
+        content: result.question,
+        timestamp: Date.now(),
+        metadata: {
+          questionType: result.type as 'technical' | 'behavioral',
+          difficulty: interviewDifficulty,
+        },
+      };
+      setInterviewSession((prev) =>
+        prev ? { ...prev, messages: [...prev.messages, questionMessage] } : prev,
+      );
+    } catch (error) {
+      console.error('Error generating first question:', error);
+      const fallbackQuestion = {
+        role: 'assistant' as const,
+        content: 'Na trego për veten tënde dhe pse dëshiron këtë pozicion.',
+        timestamp: Date.now(),
+      };
+      setInterviewSession((prev) =>
+        prev ? { ...prev, messages: [...prev.messages, fallbackQuestion] } : prev,
+      );
+    } finally {
+      setIsGeneratingQuestion(false);
+    }
+  }, [prediction, interviewMode, interviewDifficulty]);
+
+  const submitInterviewAnswer = useCallback(async () => {
+    if (!interviewSession || !interviewInput.trim() || isEvaluating) return;
+
+    const userMessage = {
+      role: 'user' as const,
+      content: interviewInput,
+      timestamp: Date.now(),
+    };
+
+    const updatedMessages = [...interviewSession.messages, userMessage];
+    setInterviewSession((prev) =>
+      prev ? { ...prev, messages: updatedMessages } : prev,
+    );
+    setInterviewInput('');
+    setIsEvaluating(true);
+
+    try {
+      // Get the last question
+      const lastQuestion = [...interviewSession.messages]
+        .reverse()
+        .find((m) => m.role === 'assistant');
+      if (!lastQuestion) return;
+
+      // Evaluate the answer
+      const feedback = await evaluateAnswerWithFeedback(
+        interviewSession.career,
+        lastQuestion.content,
+        interviewInput,
+        interviewSession.mode,
+        interviewSession.currentDifficulty,
+      );
+
+      // Update message with feedback
+      const messageWithFeedback = {
+        ...userMessage,
+        metadata: { feedback },
+      };
+
+      const newQuestionsAnswered = interviewSession.questionsAnswered + 1;
+      const newScore =
+        (interviewSession.overallScore * interviewSession.questionsAnswered + feedback.score) /
+        newQuestionsAnswered;
+
+      const newWeakAreas = [...interviewSession.weakAreas];
+      const newStrongAreas = [...interviewSession.strongAreas];
+
+      if (feedback.score < 50) {
+        feedback.improvements.forEach((imp) => {
+          if (!newWeakAreas.includes(imp)) newWeakAreas.push(imp);
+        });
+      } else if (feedback.score >= 70) {
+        feedback.strengths.forEach((str) => {
+          if (!newStrongAreas.includes(str)) newStrongAreas.push(str);
+        });
+      }
+
+      // Determine next difficulty
+      const nextDifficulty = await determineNextDifficulty(
+        [...updatedMessages, messageWithFeedback],
+        interviewSession.currentDifficulty,
+      );
+
+      setInterviewSession((prev) => {
+        if (!prev) return prev;
+        const msgs = prev.messages.map((m) =>
+          m.timestamp === userMessage.timestamp ? messageWithFeedback : m,
+        );
+        return {
+          ...prev,
+          messages: msgs,
+          questionsAnswered: newQuestionsAnswered,
+          overallScore: Math.round(newScore),
+          currentDifficulty: nextDifficulty,
+          weakAreas: newWeakAreas.slice(0, 5),
+          strongAreas: newStrongAreas.slice(0, 5),
+        };
+      });
+
+      // Generate next question or finish
+      if (newQuestionsAnswered < MAX_QUESTIONS) {
+        setIsGeneratingQuestion(true);
+        const nextQ = await generateDynamicQuestion(
+          interviewSession.career,
+          interviewSession.mode,
+          nextDifficulty,
+          [...updatedMessages, messageWithFeedback],
+          newWeakAreas,
+        );
+        const nextQuestionMessage = {
+          role: 'assistant' as const,
+          content: nextQ.question,
+          timestamp: Date.now(),
+          metadata: {
+            questionType: nextQ.type as 'technical' | 'behavioral',
+            difficulty: nextDifficulty,
+          },
+        };
+        setInterviewSession((prev) =>
+          prev ? { ...prev, messages: [...prev.messages, nextQuestionMessage] } : prev,
+        );
+        setIsGeneratingQuestion(false);
       }
     } catch (error) {
-      console.error("Hugging Face Error:", error);
+      console.error('Error evaluating answer:', error);
+    } finally {
+      setIsEvaluating(false);
     }
-  }
+  }, [interviewSession, interviewInput, isEvaluating]);
 
-  return withRetry(async () => {
-    const chat = ai.chats.create({
-      model: "gemini-3-flash-preview",
-      config: {
-        systemInstruction: `You are "Busulla AI", an expert career coach for the Albanian market. 
-        Always respond in Albanian. Be professional, direct (brutalist), and highly helpful.
-        User context (if applicable): ${career || 'General advice'}.`,
-      }
-    });
-    const result = await chat.sendMessage({ message: userMessage });
-    return result.text || "Më vjen keq, nuk munda të përpunoj këtë kërkesë.";
-  });
+  const requestHint = useCallback(async () => {
+    if (!interviewSession || interviewSession.hintsUsed >= interviewSession.maxHints) return;
+
+    const lastQuestion = [...interviewSession.messages]
+      .reverse()
+      .find((m) => m.role === 'assistant');
+    if (!lastQuestion) return;
+
+    try {
+      const hint = await getHint(lastQuestion.content, interviewSession.career);
+      const hintMessage = {
+        role: 'assistant' as const,
+        content: `💡 Hint: ${hint}`,
+        timestamp: Date.now(),
+        metadata: { isHint: true },
+      };
+      setInterviewSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: [...prev.messages, hintMessage],
+              hintsUsed: prev.hintsUsed + 1,
+            }
+          : prev,
+      );
+    } catch (error) {
+      console.error('Error getting hint:', error);
+    }
+  }, [interviewSession]);
+
+  const finishInterview = useCallback(async () => {
+    if (!interviewSession) return;
+
+    setIsEvaluating(true);
+    try {
+      const completedSession: InterviewSession = {
+        ...interviewSession,
+        isComplete: true,
+        endTime: Date.now(),
+      };
+      setInterviewSession(completedSession);
+
+      const report = await generateInterviewReport(completedSession);
+      setInterviewReport(report);
+      setCurrentStep(AppState.INTERVIEW_REPORT);
+    } catch (error) {
+      console.error('Error generating report:', error);
+    } finally {
+      setIsEvaluating(false);
+    }
+  }, [interviewSession]);
+
+  const resetToStart = () => {
+    setCurrentStep(AppState.LANDING);
+    setQuizAnswers([]);
+    setCurrentQuestionIndex(0);
+    setCustomValue('');
+    setPrediction(null);
+    setIsLoading(false);
+    setInterviewSession(null);
+    setInterviewInput('');
+    setInterviewReport(null);
+    setInterviewMode(InterviewMode.MIXED);
+    setInterviewDifficulty(DifficultyLevel.MEDIUM);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="min-h-screen selection:bg-white selection:text-black overflow-x-hidden bg-[#050505]">
+      <ASCIIGrid />
+
+      {currentStep === AppState.LANDING && (
+        <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 0.18, scale: 1 }}
+            transition={{ duration: 1.5, ease: 'easeOut' }}
+          >
+            <Suspense fallback={null}>
+              <Compass isSpinning={false} rotationSpeed={0.6} size="lg" />
+            </Suspense>
+          </motion.div>
+        </div>
+      )}
+
+      {currentStep === AppState.ANALYZING && (
+        <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5, rotate: 0 }}
+            animate={{ opacity: 0.9, scale: 1, rotate: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+          >
+            <Suspense fallback={null}>
+              <Compass isSpinning={true} rotationSpeed={2.5} size="lg" />
+            </Suspense>
+          </motion.div>
+        </div>
+      )}
+
+      <nav className="fixed top-0 left-0 w-full p-4 md:p-6 flex justify-between items-center z-50 backdrop-blur-sm bg-black/50 border-b border-white/5">
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="w-6 h-6 md:w-8 md:h-8 border-2 border-white rotate-45 flex items-center justify-center bg-white text-black font-bold">
+            <span className="text-[10px] md:text-[12px] -rotate-45">B</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="font-heading font-bold text-base md:text-lg tracking-tighter uppercase leading-none">
+              Busulla
+            </span>
+            <span className="text-[8px] md:text-[10px] font-mono opacity-50 uppercase tracking-[0.3em]">
+              EDICION_PRO
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={resetToStart}
+          className="text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 px-3 py-2 md:px-4 hover:bg-white hover:text-black transition-all"
+        >
+          {currentStep !== AppState.LANDING ? TRANSLATIONS.common.restart : 'SQ-AL'}
+        </button>
+      </nav>
+
+      <main className="relative flex flex-col items-center justify-center min-h-screen px-4 md:px-6 lg:px-8 pt-20 md:pt-24 pb-20">
+        <AnimatePresence mode="wait">
+          {currentStep === AppState.LANDING && (
+            <motion.div
+              key="landing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="max-w-4xl w-full text-center space-y-8 md:space-y-12 relative z-10"
+            >
+              <ASCIIHeader />
+              <div className="space-y-4 md:space-y-6">
+                <h1 className="text-4xl md:text-7xl lg:text-9xl font-heading font-black uppercase leading-[0.85] tracking-tighter">
+                  {TRANSLATIONS.landing.title.split(' ').map((word, j) => (
+                    <span key={j} className="block hover:italic">
+                      {word}
+                    </span>
+                  ))}
+                </h1>
+                <p className="text-lg md:text-xl lg:text-2xl text-gray-400 max-w-xl mx-auto italic border-l-2 border-white/20 pl-4 md:pl-6">
+                  {TRANSLATIONS.landing.subtitle}
+                </p>
+              </div>
+              <button
+                onClick={startQuiz}
+                className="px-8 py-4 md:px-16 md:py-8 bg-white text-black font-heading font-black text-xl md:text-3xl uppercase brutalist-button transition-all hover:scale-105"
+              >
+                {TRANSLATIONS.common.start} →
+              </button>
+            </motion.div>
+          )}
+
+          {currentStep === AppState.QUIZ && (
+            <motion.div
+              key="quiz"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="w-full max-w-2xl md:max-w-4xl"
+            >
+              <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
+                <div className="mb-6 md:mb-8">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs md:text-sm uppercase font-mono">
+                      {TRANSLATIONS.quiz.progress}
+                    </span>
+                    <span className="text-xs md:text-sm font-bold">
+                      {currentQuestionIndex + 1}/{QUIZ_QUESTIONS.length}
+                    </span>
+                  </div>
+                  <div className="h-1 md:h-2 bg-white/10 brutalist-border overflow-hidden">
+                    <motion.div
+                      className="h-full bg-white"
+                      initial={{ width: 0 }}
+                      animate={{
+                        width: `${((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100}%`,
+                      }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                </div>
+
+                <h2 className="text-2xl md:text-4xl font-heading font-bold mb-6 md:mb-8 leading-tight">
+                  {QUIZ_QUESTIONS[currentQuestionIndex].text}
+                </h2>
+
+                <div className="space-y-3 md:space-y-4">
+                  {QUIZ_QUESTIONS[currentQuestionIndex].options.map((option, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleAnswer(option)}
+                      className="w-full text-left p-4 md:p-6 brutalist-border hover:bg-white hover:text-black transition-all text-sm md:text-base"
+                    >
+                      <span className="font-mono text-xs mr-3 md:mr-4 opacity-50">
+                        [{String.fromCharCode(65 + i)}]
+                      </span>
+                      {option}
+                    </button>
+                  ))}
+
+                  <div className="pt-4 md:pt-6 border-t border-white/10">
+                    <input
+                      type="text"
+                      value={customValue}
+                      onChange={(e) => setCustomValue(e.target.value)}
+                      placeholder={TRANSLATIONS.common.customPlaceholder}
+                      className="w-full bg-transparent border-2 border-white/20 p-4 md:p-6 mb-3 md:mb-4 focus:border-white outline-none text-sm md:text-base"
+                    />
+                    <button
+                      onClick={() => customValue.trim() && handleAnswer(customValue, true)}
+                      disabled={!customValue.trim()}
+                      className="w-full brutalist-border p-4 md:p-6 hover:bg-white hover:text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed text-sm md:text-base"
+                    >
+                      {TRANSLATIONS.common.other}
+                    </button>
+                  </div>
+                </div>
+
+                {currentQuestionIndex > 0 && (
+                  <button
+                    onClick={() => setCurrentQuestionIndex((prev) => prev - 1)}
+                    className="mt-6 md:mt-8 text-xs md:text-sm uppercase tracking-wider opacity-50 hover:opacity-100"
+                  >
+                    ← {TRANSLATIONS.common.back}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === AppState.ANALYZING && (
+            <motion.div
+              key="analyzing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center space-y-6 md:space-y-8 max-w-2xl w-full relative z-10"
+            >
+              <div className="h-32 md:h-40" />
+              <h2 className="text-3xl md:text-5xl font-heading font-bold">
+                {TRANSLATIONS.analyzing.title}
+              </h2>
+              <p className="text-lg md:text-xl text-gray-400 italic">
+                {TRANSLATIONS.analyzing.subtitle}
+              </p>
+            </motion.div>
+          )}
+
+          {currentStep === AppState.RESULTS && prediction && (
+            <motion.div
+              key="results"
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full max-w-2xl md:max-w-4xl space-y-6 md:space-y-8"
+            >
+              <div className="brutalist-border bg-black p-6 md:p-8 lg:p-12">
+                <h2 className="text-2xl md:text-4xl font-heading font-bold mb-6 md:mb-8">
+                  {TRANSLATIONS.results.title}
+                </h2>
+
+                <div className="mb-8 md:mb-12 p-6 md:p-8 brutalist-border bg-white/5">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-4 md:mb-6 gap-4">
+                    <div>
+                      <p className="text-xs md:text-sm uppercase tracking-wider opacity-50 mb-2">
+                        {TRANSLATIONS.results.match}
+                      </p>
+                      <h3 className="text-3xl md:text-5xl font-heading font-black">
+                        {prediction.primaryCareer}
+                      </h3>
+                    </div>
+                    <div className="text-left md:text-right">
+                      <p className="text-xs md:text-sm uppercase tracking-wider opacity-50 mb-2">
+                        {TRANSLATIONS.results.confidence}
+                      </p>
+                      <p className="text-3xl md:text-5xl font-mono font-bold">
+                        {(prediction.confidence * 100).toFixed(0)}%
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-base md:text-lg text-gray-300 leading-relaxed">
+                    {prediction.description}
+                  </p>
+                </div>
+
+                {prediction.alternatives && prediction.alternatives.length > 0 && (
+                  <div className="mb-8 md:mb-12">
+                    <h4 className="text-lg md:text-xl font-bold mb-4 md:mb-6 uppercase tracking-wider">
+                      {TRANSLATIONS.results.alternatives}
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                      {prediction.alternatives.map((alt, i) => (
+                        <div key={i} className="p-4 md:p-6 brutalist-border bg-white/5">
+                          <div className="flex justify-between items-start mb-2">
+                            <h5 className="font-bold text-base md:text-lg">{alt.career}</h5>
+                            <span className="text-xs md:text-sm font-mono opacity-70">
+                              {(alt.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <p className="text-xs md:text-sm text-gray-400">{alt.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {mlScores.length > 0 && (
+                  <div className="mb-8 md:mb-12">
+                    <div className="flex items-center gap-3 mb-4 md:mb-6">
+                      <h4 className="text-lg md:text-xl font-bold uppercase tracking-wider">
+                        Analiza ML
+                      </h4>
+                      <span className="text-[10px] font-mono px-2 py-1 border border-white/20 uppercase tracking-widest opacity-60">
+                        model lokal
+                      </span>
+                    </div>
+                    <div className="space-y-2 md:space-y-3">
+                      {mlScores.slice(0, 6).map((s, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <span className="w-36 md:w-48 text-xs md:text-sm font-mono truncate opacity-80">
+                            {s.career}
+                          </span>
+                          <div className="flex-1 h-2 bg-white/10 overflow-hidden">
+                            <motion.div
+                              className={`h-full ${i === 0 ? 'bg-white' : 'bg-white/40'}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${s.confidence * 100}%` }}
+                              transition={{ duration: 0.6, delay: i * 0.07, ease: 'easeOut' }}
+                            />
+                          </div>
+                          <span className="w-10 text-right text-xs font-mono opacity-60">
+                            {(s.confidence * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {prediction.learningPath && (
+                  <div className="mb-8 md:mb-12">
+                    <h4 className="text-lg md:text-xl font-bold mb-4 md:mb-6 uppercase tracking-wider">
+                      {TRANSLATIONS.results.learning}
+                    </h4>
+                    <ul className="space-y-3 md:space-y-4">
+                      {prediction.learningPath.map((step, i) => (
+                        <li key={i} className="flex items-start gap-3 md:gap-4">
+                          <span className="font-mono text-xs md:text-sm mt-1 opacity-50">
+                            {i + 1}.
+                          </span>
+                          <span className="text-sm md:text-base">{step}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <button
+                  onClick={startInterviewSetup}
+                  className="w-full p-6 md:p-8 bg-white text-black font-heading font-bold text-lg md:text-2xl uppercase brutalist-button hover:scale-[1.02] transition-all"
+                >
+                  {TRANSLATIONS.results.practice} →
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === AppState.INTERVIEW_SETUP && prediction && (
+            <InterviewSetup
+              prediction={prediction}
+              selectedMode={interviewMode}
+              selectedDifficulty={interviewDifficulty}
+              onModeChange={setInterviewMode}
+              onDifficultyChange={setInterviewDifficulty}
+              onStart={startInterview}
+            />
+          )}
+
+          {currentStep === AppState.INTERVIEW_SESSION && interviewSession && (
+            <InterviewSessionComponent
+              session={interviewSession}
+              userInput={interviewInput}
+              isGeneratingQuestion={isGeneratingQuestion}
+              isEvaluating={isEvaluating}
+              onInputChange={setInterviewInput}
+              onSubmitAnswer={submitInterviewAnswer}
+              onRequestHint={requestHint}
+              onFinish={finishInterview}
+            />
+          )}
+
+          {currentStep === AppState.INTERVIEW_REPORT && interviewReport && (
+            <InterviewReport
+              report={interviewReport}
+              onNewInterview={startInterviewSetup}
+              onBackToResults={() => setCurrentStep(AppState.RESULTS)}
+            />
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* Career Assistant Chat */}
+      <CareerAssistant
+        isOpen={isChatOpen}
+        onToggle={() => setIsChatOpen(!isChatOpen)}
+        session={chatSession}
+        onSessionUpdate={setChatSession}
+        careerContext={prediction?.primaryCareer}
+        weakAreas={interviewSession?.weakAreas}
+      />
+
+      <style>{`
+        .brutalist-border {
+          border: 3px solid white;
+          box-shadow: 6px 6px 0 rgba(255,255,255,0.1);
+        }
+        .brutalist-button:hover {
+          box-shadow: 8px 8px 0 rgba(255,255,255,0.2);
+        }
+        .font-heading {
+          font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        @media (max-width: 768px) {
+          .brutalist-border {
+            border: 2px solid white;
+            box-shadow: 4px 4px 0 rgba(255,255,255,0.1);
+          }
+        }
+      `}</style>
+    </div>
+  );
 };
+
+export default App;
